@@ -7,6 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+// MAKEFOURCC may not be defined in newer Windows SDK versions
+#ifndef MAKEFOURCC
+#define MAKEFOURCC(ch0, ch1, ch2, ch3) \
+    ((DWORD)(BYTE)(ch0) | ((DWORD)(BYTE)(ch1) << 8) | \
+    ((DWORD)(BYTE)(ch2) << 16) | ((DWORD)(BYTE)(ch3) << 24))
+#endif
+
 #include "xmpin.h"
 
 extern "C" {
@@ -380,7 +387,10 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 	xmpftext = (XMPFUNC_TEXT*)faceproc(XMPFUNC_TEXT_FACE);
 	xmpver   = xmpfmisc->GetVersion();
 
+	// av_register_all() was removed in FFmpeg 5.0+
+#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58, 9, 100)
 	av_register_all();
+#endif
 	avformat_network_init();
 
 	return &xmpin;
