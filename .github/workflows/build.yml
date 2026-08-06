@@ -86,12 +86,15 @@ jobs:
           cp -f ffmpeg-src/ffbuild/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
 
-          # Copy MinGW runtime libraries
+          # Copy MinGW runtime and dependency libraries
           MINGW_LIB=$(dirname $(which gcc))/../lib
           echo "MinGW lib dir: $MINGW_LIB"
           cp -f "$MINGW_LIB/libmingwex.a" ffmpeg/lib/ 2>/dev/null || true
           cp -f "$MINGW_LIB/libmsvcrt.a" ffmpeg/lib/ 2>/dev/null || true
           cp -f "$MINGW_LIB/libgcc.a" ffmpeg/lib/ 2>/dev/null || true
+          cp -f "$MINGW_LIB/libz.a" ffmpeg/lib/ 2>/dev/null || true
+          cp -f "$MINGW_LIB/libiconv.a" ffmpeg/lib/ 2>/dev/null || true
+          cp -f "$MINGW_LIB/libcharset.a" ffmpeg/lib/ 2>/dev/null || true
           # Also check GCC lib directory
           GCC_LIB=$(dirname $(gcc -print-libgcc-file-name))
           echo "GCC lib dir: $GCC_LIB"
