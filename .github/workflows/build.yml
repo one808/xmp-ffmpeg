@@ -36,6 +36,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE"
+          echo "Working dir: $(pwd)"
           git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
 
       - name: Build FFmpeg static libraries
@@ -68,23 +69,27 @@ jobs:
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "Current dir: $(pwd)"
+          ls -la
           mkdir -p ffmpeg/include/libavformat
           mkdir -p ffmpeg/include/libavcodec
           mkdir -p ffmpeg/include/libavutil
           mkdir -p ffmpeg/include/libswresample
           mkdir -p ffmpeg/lib
-
           cp -f ffmpeg-src/libavformat/*.h ffmpeg/include/libavformat/
           cp -f ffmpeg-src/libavcodec/*.h ffmpeg/include/libavcodec/
           cp -f ffmpeg-src/libavutil/*.h ffmpeg/include/libavutil/
           cp -f ffmpeg-src/libswresample/*.h ffmpeg/include/libswresample/
           cp -f ffmpeg-src/ffbuild/config.h ffmpeg/include/
           cp -f ffmpeg-src/ffbuild/libavutil/avconfig.h ffmpeg/include/libavutil/
-
           cp -f ffmpeg-src/ffbuild/libavformat/libavformat.a ffmpeg/lib/avformat.lib
           cp -f ffmpeg-src/ffbuild/libavcodec/libavcodec.a ffmpeg/lib/avcodec.lib
           cp -f ffmpeg-src/ffbuild/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
+          echo "=== ffmpeg/include contents ==="
+          ls -la ffmpeg/include/
+          ls -la ffmpeg/include/libavformat/
 
       - name: Build xmp-ffmpeg
         shell: cmd
