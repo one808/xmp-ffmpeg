@@ -1,0 +1,4 @@
+LIBRARY xmp-ffmpeg
+
+EXPORTS
+    XMPIN_GetInterface
