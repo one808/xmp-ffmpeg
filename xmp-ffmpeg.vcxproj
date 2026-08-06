@@ -56,7 +56,8 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(FFmpegDir)\lib;C:\msys64\mingw32\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swresample.lib;ws2_32.lib;secur32.lib;bcrypt.lib;ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swresample.lib;libmsvcrt.a;libmingwex.a;libgcc.a;ws2_32.lib;secur32.lib;bcrypt.lib;ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ForceSymbolReferences>__imp__clock_gettime32;__imp__nanosleep32;__imp____mingw_raise_matherr;__imp____mingw_snprintf</ForceSymbolReferences>
       <OutputFile>$(OutDir)xmp-ffmpeg.dll</OutputFile>
       <ImportLibrary>$(OutDir)xmp-ffmpeg.lib</ImportLibrary>
       <ModuleDefinitionFile>xmp-ffmpeg.def</ModuleDefinitionFile>
