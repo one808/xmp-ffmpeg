@@ -36,7 +36,7 @@
 
   <PropertyGroup>
     <FFmpegDir>$(ProjectDir)..\ffmpeg</FFmpegDir>
-    <MinGWDir>C:\msys64\mingw32</MinGWDir>
+    <MinGWDir Condition="'$(MinGWDir)'==''">C:\msys64\mingw32</MinGWDir>
   </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
