@@ -56,7 +56,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(FFmpegDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swresample.lib;ws2_32.lib;secur32.lib;bcrypt.lib;libmingwex.a;libmsvcrt.a;libgcc.a;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swresample.lib;libmsvcrt.a;libmingwex.a;libgcc.a;ws2_32.lib;secur32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)xmp-ffmpeg.dll</OutputFile>
       <ImportLibrary>$(OutDir)xmp-ffmpeg.lib</ImportLibrary>
       <ModuleDefinitionFile>xmp-ffmpeg.def</ModuleDefinitionFile>
