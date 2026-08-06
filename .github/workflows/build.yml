@@ -92,8 +92,8 @@ jobs:
           cp -f /mingw32/lib/libmingwex.a ffmpeg/lib/ 2>/dev/null || echo "libmingwex.a not found at /mingw32/lib"
           cp -f /mingw32/lib/libmsvcrt.a ffmpeg/lib/ 2>/dev/null || echo "libmsvcrt.a not found at /mingw32/lib"
           cp -f /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found at /mingw32/lib"
-          # Try alternative location
-          find / -name "libgcc.a" 2>/dev/null | head -5
+          # Try GCC lib directory
+          cp -f /mingw32/lib/gcc/i686-w64-mingw32/*/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found in GCC dir"
           ls -la ffmpeg/lib/
 
       - name: Build xmp-ffmpeg
