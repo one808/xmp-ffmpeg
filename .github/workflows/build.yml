@@ -22,6 +22,7 @@ jobs:
 
       - name: Install MSYS2
         uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: MINGW32
           update: true
@@ -31,6 +32,14 @@ jobs:
             mingw-w64-i686-pkg-config
             git
             base-devel
+
+      - name: Setup MinGW path
+        shell: powershell
+        run: |
+          $msys2Dir = "${{ steps.msys2.outputs.msys2-location }}"
+          $mingwDir = "$msys2Dir\mingw32"
+          Write-Host "MinGW Dir: $mingwDir"
+          echo "MINGW_DIR=$mingwDir" >> $env:GITHUB_ENV
 
       - name: Download FFmpeg
         shell: msys2 {0}
@@ -90,7 +99,7 @@ jobs:
         shell: cmd
         run: |
           call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
-          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /m
+          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:MinGWDir=%MINGW_DIR% /m
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
