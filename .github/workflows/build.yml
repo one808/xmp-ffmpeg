@@ -15,8 +15,14 @@ jobs:
       - name: Install v141_xp toolset
         shell: powershell
         run: |
-          & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe" `
-            modify --installPath "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" `
+          # Find VS install path
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vsWhere -latest -property installationPath
+          Write-Host "VS Path: $vsPath"
+          echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
+
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" `
+            modify --installPath $vsPath `
             --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 `
             --add Microsoft.VisualStudio.Component.WinXP `
             --quiet --wait --norestart 2>$null
@@ -39,20 +45,24 @@ jobs:
       - name: Install MinGW & MSYS2
         shell: cmd
         run: |
-          choco install mingw -y --no-progress
           choco install msys2 -y --no-progress
+          C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm make"
 
       - name: Build FFmpeg static libraries
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
           where cl
-          set PATH=C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin;%PATH%
+
+          set MSYS_ROOT=C:\msys64
+          set PATH=%MSYS_ROOT%\usr\bin;C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin;%PATH%
+
           cd ffmpeg-src
           if exist ffbuild rmdir /s /q ffbuild
-          mkdir ffbuild
-          bash -lc "cd '$(pwd)/ffbuild' && ../configure --toolchain=msvc --arch=x86 --target-os=win32 --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus"
-          make -j%NUMBER_OF_PROCESSORS%
+
+          %MSYS_ROOT%\usr\bin\bash -lc "mkdir -p ffbuild && cd ffbuild && ../configure --toolchain=msvc --arch=x86 --target-os=win32 --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus"
+
+          %MSYS_ROOT%\usr\bin\bash -lc "cd ffbuild && make -j$(nproc)"
 
       - name: Prepare FFmpeg SDK
         shell: cmd
@@ -78,7 +88,7 @@ jobs:
       - name: Build xmp-ffmpeg
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
           msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /m
 
       - name: Upload artifact
