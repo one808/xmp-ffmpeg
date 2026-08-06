@@ -404,6 +404,15 @@ BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 
 // Stubs for MinGW runtime functions when linking with MSVC
 extern "C" {
+	// Define timespec for MSVC (not available in MSVC's time.h)
+#ifndef _TIMESPEC_DEFINED
+#define _TIMESPEC_DEFINED
+	struct timespec {
+		time_t tv_sec;
+		long tv_nsec;
+	};
+#endif
+
 	int __cdecl _clock_gettime32(int clk_id, struct timespec *tp) {
 		static int initialized = 0;
 		static LARGE_INTEGER frequency;
