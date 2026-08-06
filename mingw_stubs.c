@@ -5,8 +5,8 @@
 #include <windows.h>
 #include <time.h>
 
-// clock_gettime stub for MinGW compatibility
-int clock_gettime(int clk_id, struct timespec *tp) {
+// clock_gettime stub for MinGW compatibility (with 32 suffix)
+int __cdecl _clock_gettime32(int clk_id, struct timespec *tp) {
     static int initialized = 0;
     static LARGE_INTEGER frequency;
     
@@ -24,8 +24,8 @@ int clock_gettime(int clk_id, struct timespec *tp) {
     return 0;
 }
 
-// nanosleep stub for MinGW compatibility
-int nanosleep(const struct timespec *req, struct timespec *rem) {
+// nanosleep stub for MinGW compatibility (with 32 suffix)
+int __cdecl _nanosleep32(const struct timespec *req, struct timespec *rem) {
     DWORD ms = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
     if (ms == 0) ms = 1;
     Sleep(ms);
@@ -36,7 +36,7 @@ int nanosleep(const struct timespec *req, struct timespec *rem) {
     return 0;
 }
 
-// MinGW math error handler stub
-void __mingw_raise_matherr(int type, const char *name, double a1, double a2, double r) {
+// MinGW math error handler stub (with three underscores)
+void __cdecl ___mingw_raise_matherr(int type, const char *name, double a1, double a2, double r) {
     // Do nothing - just a stub
 }
