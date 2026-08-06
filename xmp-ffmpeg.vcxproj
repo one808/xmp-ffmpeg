@@ -36,7 +36,6 @@
 
   <PropertyGroup>
     <FFmpegDir>$(ProjectDir)..\ffmpeg</FFmpegDir>
-    <MinGWDir Condition="'$(MinGWDir)'==''">C:\msys64\mingw32</MinGWDir>
   </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -56,7 +55,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(FFmpegDir)\lib;$(MinGWDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(FFmpegDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swresample.lib;ws2_32.lib;secur32.lib;bcrypt.lib;libmingwex.a;libmsvcrt.a;libgcc.a;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)xmp-ffmpeg.dll</OutputFile>
       <ImportLibrary>$(OutDir)xmp-ffmpeg.lib</ImportLibrary>
