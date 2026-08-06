@@ -88,9 +88,10 @@ jobs:
           cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
 
           # Copy MinGW runtime libraries
-          cp -f /mingw32/lib/libmingwex.a ffmpeg/lib/ 2>/dev/null || true
-          cp -f /mingw32/lib/libmsvcrt.a ffmpeg/lib/ 2>/dev/null || true
-          cp -f /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || true
+          cp -f /mingw32/lib/libmingwex.a ffmpeg/lib/ 2>/dev/null || echo "libmingwex.a not found"
+          cp -f /mingw32/lib/libmsvcrt.a ffmpeg/lib/ 2>/dev/null || echo "libmsvcrt.a not found"
+          cp -f /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found"
+          ls -la ffmpeg/lib/
 
       - name: Build xmp-ffmpeg
         shell: cmd
