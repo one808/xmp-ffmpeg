@@ -87,6 +87,11 @@ jobs:
           cp -f ffmpeg-src/ffbuild/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
 
+          # Copy MinGW runtime libraries
+          cp -f /mingw32/lib/libmingwex.a ffmpeg/lib/ 2>/dev/null || true
+          cp -f /mingw32/lib/libmsvcrt.a ffmpeg/lib/ 2>/dev/null || true
+          cp -f /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || true
+
       - name: Build xmp-ffmpeg
         shell: cmd
         run: |
