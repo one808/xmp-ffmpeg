@@ -1,11 +1,12 @@
 // Stub implementations for MinGW runtime functions when linking with MSVC
 // These are needed when FFmpeg is built with MinGW but linked with MSVC
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <time.h>
 
 // clock_gettime stub for MinGW compatibility
 int clock_gettime(int clk_id, struct timespec *tp) {
-    // Use Windows QueryPerformanceCounter as fallback
     static int initialized = 0;
     static LARGE_INTEGER frequency;
     
@@ -25,10 +26,9 @@ int clock_gettime(int clk_id, struct timespec *tp) {
 
 // nanosleep stub for MinGW compatibility
 int nanosleep(const struct timespec *req, struct timespec *rem) {
-    // Use Windows Sleep
-    DWORD milliseconds = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
-    if (milliseconds == 0) milliseconds = 1; // Minimum 1ms
-    Sleep(milliseconds);
+    DWORD ms = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
+    if (ms == 0) ms = 1;
+    Sleep(ms);
     if (rem) {
         rem->tv_sec = 0;
         rem->tv_nsec = 0;
