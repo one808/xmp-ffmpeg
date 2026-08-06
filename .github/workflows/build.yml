@@ -12,14 +12,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install v141_xp toolset
+      - name: Setup MSVC
         shell: powershell
         run: |
           $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vsWhere -latest -property installationPath
           Write-Host "VS Path: $vsPath"
           echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
-          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" modify --installPath $vsPath --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --add Microsoft.VisualStudio.Component.WinXP --quiet --wait --norestart 2>$null
 
       - name: Install MSYS2
         uses: msys2/setup-msys2@v2
@@ -89,7 +88,7 @@ jobs:
         shell: cmd
         run: |
           call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
-          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /m
+          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141 /m
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
