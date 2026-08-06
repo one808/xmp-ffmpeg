@@ -65,6 +65,7 @@
 
   <ItemGroup>
     <ClCompile Include="xmp-ffmpeg.cpp" />
+    <ClCompile Include="mingw_stubs.c" />
     <ClInclude Include="xmpin.h" />
     <ClInclude Include="xmpfunc.h" />
   </ItemGroup>
