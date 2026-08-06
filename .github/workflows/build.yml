@@ -26,9 +26,11 @@ jobs:
           msystem: MINGW32
           update: true
           install: >-
+            mingw-w64-i686-gcc
+            mingw-w64-i686-make
+            mingw-w64-i686-pkg-config
             git
-            make
-            pkg-config
+            base-devel
 
       - name: Download FFmpeg
         shell: msys2 {0}
@@ -36,38 +38,53 @@ jobs:
           cd "$GITHUB_WORKSPACE/.."
           git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
 
-      - name: Configure and Build FFmpeg
+      - name: Build FFmpeg static libraries
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/../ffmpeg-src"
           mkdir -p ffbuild && cd ffbuild
-          export PATH="/c/msys64/usr/bin:$PATH"
-          # Set MSVC environment variables
-          export INCLUDE="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/include"
-          export LIB="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/lib/x86;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/um/x86;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/ucrt/x86"
-          export LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/lib/x86;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/um/x86;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22621.0/ucrt/x86"
-          ../configure --toolchain=msvc --arch=x86 --target-os=win32 --enable-cross-compile --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
+          ../configure \
+            --arch=x86 \
+            --target-os=win32 \
+            --enable-cross-compile \
+            --enable-static \
+            --disable-shared \
+            --disable-programs \
+            --disable-doc \
+            --disable-network \
+            --disable-everything \
+            --disable-avfilter \
+            --disable-avdevice \
+            --disable-swscale \
+            --disable-debug \
+            --disable-x86asm \
+            --enable-protocol=file \
+            --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le \
+            --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha \
+            --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
           make -j$(nproc)
 
       - name: Prepare FFmpeg SDK
-        shell: cmd
+        shell: msys2 {0}
         run: |
-          cd "%GITHUB_WORKSPACE%\.."
-          mkdir ffmpeg\include\libavformat 2>nul
-          mkdir ffmpeg\include\libavcodec 2>nul
-          mkdir ffmpeg\include\libavutil 2>nul
-          mkdir ffmpeg\include\libswresample 2>nul
-          mkdir ffmpeg\lib 2>nul
-          xcopy /y /q ffmpeg-src\libavformat\*.h ffmpeg\include\libavformat\
-          xcopy /y /q ffmpeg-src\libavcodec\*.h ffmpeg\include\libavcodec\
-          xcopy /y /q ffmpeg-src\libavutil\*.h ffmpeg\include\libavutil\
-          xcopy /y /q ffmpeg-src\libswresample\*.h ffmpeg\include\libswresample\
-          copy /y ffmpeg-src\ffbuild\config.h ffmpeg\include\
-          copy /y ffmpeg-src\ffbuild\libavutil\avconfig.h ffmpeg\include\libavutil\
-          copy /y ffmpeg-src\ffbuild\libavformat\avformat.lib ffmpeg\lib\
-          copy /y ffmpeg-src\ffbuild\libavcodec\avcodec.lib ffmpeg\lib\
-          copy /y ffmpeg-src\ffbuild\libavutil\avutil.lib ffmpeg\lib\
-          copy /y ffmpeg-src\ffbuild\libswresample\swresample.lib ffmpeg\lib\
+          cd "$GITHUB_WORKSPACE/.."
+          mkdir -p ffmpeg/include/libavformat
+          mkdir -p ffmpeg/include/libavcodec
+          mkdir -p ffmpeg/include/libavutil
+          mkdir -p ffmpeg/include/libswresample
+          mkdir -p ffmpeg/lib
+
+          cp -f ffmpeg-src/libavformat/*.h ffmpeg/include/libavformat/
+          cp -f ffmpeg-src/libavcodec/*.h ffmpeg/include/libavcodec/
+          cp -f ffmpeg-src/libavutil/*.h ffmpeg/include/libavutil/
+          cp -f ffmpeg-src/libswresample/*.h ffmpeg/include/libswresample/
+          cp -f ffmpeg-src/ffbuild/config.h ffmpeg/include/
+          cp -f ffmpeg-src/ffbuild/libavutil/avconfig.h ffmpeg/include/libavutil/
+
+          cp -f ffmpeg-src/ffbuild/libavformat/libavformat.a ffmpeg/lib/avformat.lib
+          cp -f ffmpeg-src/ffbuild/libavcodec/libavcodec.a ffmpeg/lib/avcodec.lib
+          cp -f ffmpeg-src/ffbuild/libavutil/libavutil.a ffmpeg/lib/avutil.lib
+          cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
 
       - name: Build xmp-ffmpeg
         shell: cmd
