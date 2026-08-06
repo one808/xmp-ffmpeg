@@ -49,24 +49,49 @@ jobs:
           C:\msys64\usr\bin\bash -lc "pacman -S --noconfirm make"
 
       - name: Build FFmpeg static libraries
-        shell: cmd
+        shell: powershell
         run: |
-          call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
-          where cl
-
-          set MSYS_ROOT=C:\msys64
-          set PATH=%MSYS_ROOT%\usr\bin;C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin;%PATH%
-
-          cd ffmpeg-src
-          if exist ffbuild rmdir /s /q ffbuild
-
-          REM Write MSVC env vars as bash exports
-          python -c "import os; [print(f'export {k}=\"{v}\"') for k,v in os.environ.items() if k in ('INCLUDE','LIB','LIBPATH','PATH','VS_PATH','WindowsSdkDir','UCRTVersion','UniversalCRTSdkDir')]" > ../msvc_env.sh
-
-          REM Use full path to MSYS2 bash and set PATH explicitly inside bash
-          C:\msys64\usr\bin\bash.exe -c "export PATH='/usr/bin:/usr/local/bin:/bin:$PATH'; cd \"$(cygpath '%CD%')\" && source ../msvc_env.sh && mkdir -p ffbuild && cd ffbuild && ../configure --toolchain=msvc --arch=x86 --target-os=win32 --enable-cross-compile --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus"
-
-          C:\msys64\usr\bin\bash.exe -c "export PATH='/usr/bin:/usr/local/bin:/bin:$PATH'; cd \"$(cygpath '%CD%')/ffbuild\" && make -j$(nproc)"
+          # Set up VS environment
+          & "$env:VS_PATH\VC\Auxiliary\Build\vcvarsall.bat" x86
+          
+          # Create MSVC env file for bash
+          $msvcEnv = @"
+export INCLUDE="$env:INCLUDE"
+export LIB="$env:LIB"
+export LIBPATH="$env:LIBPATH"
+export PATH="$env:PATH"
+export VS_PATH="$env:VS_PATH"
+export WindowsSdkDir="$env:WindowsSdkDir"
+export UCRTVersion="$env:UCRTVersion"
+export UniversalCRTSdkDir="$env:UniversalCRTSdkDir"
+"@
+          $msvcEnv | Out-File -FilePath "msvc_env.sh" -Encoding utf8
+          
+          # Create build script
+          $buildScript = @"
+#!/bin/bash
+export PATH="/c/msys64/usr/bin:/c/msys64/usr/local/bin:/usr/bin:$PATH"
+cd "$PWD/ffmpeg-src"
+source ../msvc_env.sh
+if [ -d ffbuild ]; then rm -rf ffbuild; fi
+mkdir -p ffbuild
+cd ffbuild
+../configure --toolchain=msvc --arch=x86 --target-os=win32 --enable-cross-compile --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
+"@
+          $buildScript | Out-File -FilePath "build_ffmpeg.sh" -Encoding utf8
+          
+          # Create make script
+          $makeScript = @"
+#!/bin/bash
+export PATH="/c/msys64/usr/bin:/c/msys64/usr/local/bin:/usr/bin:$PATH"
+cd "$PWD/ffmpeg-src/ffbuild"
+make -j$(nproc)
+"@
+          $makeScript | Out-File -FilePath "make_ffmpeg.sh" -Encoding utf8
+          
+          # Run the scripts using MSYS2 bash
+          & "C:\msys64\usr\bin\bash.exe" "build_ffmpeg.sh"
+          & "C:\msys64\usr\bin\bash.exe" "make_ffmpeg.sh"
 
       - name: Prepare FFmpeg SDK
         shell: cmd
