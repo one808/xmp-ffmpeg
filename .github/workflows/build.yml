@@ -40,14 +40,6 @@ jobs:
           tar xf ffmpeg-7.1.tar.xz
           mv ffmpeg-7.1 ffmpeg-src
 
-      - name: Download XMPlay SDK
-        shell: msys2 {0}
-        run: |
-          curl -L -o xmp-sdk.zip https://www.un4seen.com/files/xmp-sdk.zip
-          7z x xmp-sdk.zip -oxmp-sdk-tmp -y
-          cp -f xmp-sdk-tmp/xmpin.h .
-          cp -f xmp-sdk-tmp/xmpfunc.h .
-
       - name: Build FFmpeg static libraries
         shell: msys2 {0}
         run: |
