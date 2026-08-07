@@ -342,7 +342,7 @@ static BOOL WINAPI FF_CheckFile(const char *filename, XMPFILE file)
 	if (dw == MAKEFOURCC('M','A','C',' ')) return TRUE;
 	if (dw == 0x0B77) return TRUE;
 	if (dw == 0x0180FE7F || dw == 0xFE7F0180) return TRUE;
-	return TRUE;
+	return FALSE;
 }
 
 static DWORD WINAPI FF_GetFileInfo(const char *filename, XMPFILE file, float **length, char **tags)
@@ -500,9 +500,8 @@ static double WINAPI FF_SetPosition(DWORD pos)
 static XMPIN xmpin = {
 	XMPIN_FLAG_CANSTREAM,
 	"FFmpeg decoder",
-	"Audio\0mp3/aac/m4a/m4b/ogg/opus/flac/wav/aiff/ape/wma/ac3/dts/mpc/wv/tta/tak/alac/amr"
-	"/mp2/mpa/mpga/ra/spx/snd/au/raw/pcm/thd/mlp/eac3/dtsma/dtshd/lpcm"
-	"/webm/mka/oga/3gp/mp4/mov/asf/wmv/avi/mkv",
+	"Audio\0mp3/mp2/mpga/flac/ogg/oga/opus/wav/aiff/ape/ac3/dts"
+	"/m4a/m4b/mp4/mov/3gp/webm/mka/asf/wmv/avi/mkv/thd/mlp/eac3/dtsma/dtshd",
 	NULL, NULL,
 	FF_CheckFile, FF_GetFileInfo, FF_Open, FF_Close, NULL, FF_SetFormat,
 	FF_GetTags, FF_GetInfoText, FF_GetGeneralInfo, FF_GetMessage, FF_SetPosition,
