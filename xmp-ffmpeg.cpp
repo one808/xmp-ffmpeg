@@ -220,12 +220,18 @@ static volatile LONG g_in_plugin = 0;
 
 static LONG CALLBACK CrashHandler(EXCEPTION_POINTERS *ep)
 {
-	if (g_in_decode || g_in_plugin) {
-		dbglog("CrashHandler: exception=0x%lX in plugin code (in_decode=%ld in_plugin=%ld)",
-			ep->ExceptionRecord->ExceptionCode, g_in_decode, g_in_plugin);
+	// Catch access violations that happen during or after our plugin callbacks
+	// This prevents XMPlay from crashing even if the issue is in XMPlay's code
+	if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+	    ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW ||
+	    ep->ExceptionRecord->ExceptionCode == EXCEPTION_ARRAY_BOUNDS_EXCEEDED) {
+		dbglog("CrashHandler: exception=0x%lX addr=%p in_decode=%ld in_plugin=%ld",
+			ep->ExceptionRecord->ExceptionCode,
+			(void*)ep->ExceptionRecord->ExceptionInformation[1],
+			g_in_decode, g_in_plugin);
 		return EXCEPTION_EXECUTE_HANDLER; // suppress the crash
 	}
-	return EXCEPTION_CONTINUE_SEARCH; // not in our code, let it propagate
+	return EXCEPTION_CONTINUE_SEARCH;
 }
 
 static void InstallCrashHandler(void)
