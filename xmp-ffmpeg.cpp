@@ -7,34 +7,46 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
-// ============ DEBUG LOG CONFIGURATION ============
-// Uncomment the line below to enable debug logging to xmp-ffmpeg-debug.log
-// #define XMP_FFMPEG_DEBUG_LOG
-// =================================================
+// ============ DEBUG LOG ============
+#define XMP_FFMPEG_DEBUG_LOG
 
 #ifdef XMP_FFMPEG_DEBUG_LOG
 static FILE *g_logfile = NULL;
 static CRITICAL_SECTION g_logcs;
+static volatile LONG g_callcount = 0;
+
 static void dbglog_init(void) {
 	InitializeCriticalSection(&g_logcs);
 	g_logfile = fopen("xmp-ffmpeg-debug.log", "w");
-	if (g_logfile) fprintf(g_logfile, "[xmp-ffmpeg] Debug log started, PID=%lu\n", GetCurrentProcessId());
+	if (g_logfile) {
+		fprintf(g_logfile, "[xmp-ffmpeg] Debug log started, PID=%lu\n", GetCurrentProcessId());
+		fflush(g_logfile);
+	}
 }
+
 static void dbglog(const char *fmt, ...) {
 	if (!g_logfile) return;
 	EnterCriticalSection(&g_logcs);
 	va_list ap;
 	va_start(ap, fmt);
-	fprintf(g_logfile, "[%lu] ", GetTickCount());
+	fprintf(g_logfile, "[%lu] TID=%lu ",
+		GetTickCount(), GetCurrentThreadId());
 	vfprintf(g_logfile, fmt, ap);
 	fprintf(g_logfile, "\n");
 	fflush(g_logfile);
 	va_end(ap);
 	LeaveCriticalSection(&g_logcs);
 }
+
 static void dbglog_close(void) {
-	if (g_logfile) { fclose(g_logfile); g_logfile = NULL; }
+	if (g_logfile) {
+		fprintf(g_logfile, "[xmp-ffmpeg] Log closing\n");
+		fflush(g_logfile);
+		fclose(g_logfile);
+		g_logfile = NULL;
+	}
 	DeleteCriticalSection(&g_logcs);
 }
 #else
@@ -187,7 +199,8 @@ static FFContext *OpenFile(XMPFILE file)
 	ctx->frame  = av_frame_alloc();
 	if (!ctx->pkt || !ctx->frame) { FreeCtx(ctx); return NULL; }
 
-	dbglog("OpenFile: OK ctx=%p fmtctx=%p decctx=%p", ctx, ctx->fmtctx, ctx->decctx);
+	dbglog("OpenFile: OK ctx=%p fmtctx=%p decctx=%p swr=%p pkt=%p frame=%p",
+		ctx, ctx->fmtctx, ctx->decctx, ctx->swrctx, ctx->pkt, ctx->frame);
 	return ctx;
 }
 
@@ -209,8 +222,6 @@ static DWORD DecodeFrame(FFContext *ctx)
 					ctx->outbuf = newbuf;
 					memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
 					ctx->outlen += total;
-				} else {
-					dbglog("DecodeFrame: realloc FAILED outlen=%lu total=%d", ctx->outlen, total);
 				}
 			}
 			free(tmp);
@@ -307,17 +318,19 @@ static DWORD WINAPI FF_GetFileInfo(const char *filename, XMPFILE file, float **l
 
 static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 {
-	dbglog("FF_Open: filename=%s file=%p", filename ? filename : "(null)", file);
+	dbglog("FF_Open: ENTER filename=%s file=%p cur=%p", filename ? filename : "(null)", file, cur);
 	FFContext *old = cur;
 	if (old) {
-		dbglog("FF_Open: WARNING cur=%p not NULL before new open!", old);
+		dbglog("FF_Open: WARNING cur=%p not NULL!", old);
 	}
 	cur = OpenFile(file);
-	dbglog("FF_Open: cur=%p", cur);
+	dbglog("FF_Open: OpenFile returned cur=%p", cur);
 	if (!cur) return 0;
 	if (cur->totalsamples) {
 		float length = (float)((double)cur->totalsamples / cur->samplerate);
+		dbglog("FF_Open: calling SetLength, xmpfin=%p", xmpfin);
 		xmpfin->SetLength(length, TRUE);
+		dbglog("FF_Open: SetLength done");
 		if (!cur->bitrate) {
 			QWORD sz = (xmpver >= 0x03080200) ? xmpffile->GetSize64(file) : xmpffile->GetSize(file);
 			if (sz && length > 0) cur->bitrate = (double)sz / length * 8.0 / 1000.0;
@@ -327,22 +340,27 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 		DWORD br = cur->bitrate ? (DWORD)(cur->bitrate * 125) : cur->samplerate * cur->channels * 2;
 		xmpffile->NetSetRate(file, br);
 	}
+	dbglog("FF_Open: LEAVE cur=%p", cur);
 	return 1;
 }
 
 static void WINAPI FF_Close()
 {
-	dbglog("FF_Close: cur=%p", cur);
+	dbglog("FF_Close: ENTER cur=%p", cur);
+	if (cur) {
+		dbglog("FF_Close: freeing ctx=%p fmtctx=%p", cur, cur->fmtctx);
+	}
 	FreeCtx(cur);
 	cur = NULL;
-	dbglog("FF_Close: done, cur=NULL");
+	dbglog("FF_Close: LEAVE cur=NULL");
 }
 
 static char *WINAPI FF_GetTags() { return (cur && cur->fmtctx) ? BuildTags(cur->fmtctx) : NULL; }
 
 static void WINAPI FF_SetFormat(XMPFORMAT *form)
 {
-	if (!cur) { dbglog("FF_SetFormat: cur=NULL!"); return; }
+	dbglog("FF_SetFormat: cur=%p", cur);
+	if (!cur) return;
 	form->res  = 4;
 	form->chan = (WORD)cur->channels;
 	form->rate = cur->samplerate;
@@ -389,7 +407,9 @@ static void WINAPI FF_GetMessage(char *buf)
 
 static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 {
-	if (!cur) { dbglog("FF_Process: cur=NULL, returning 0"); return 0; }
+	LONG callid = InterlockedIncrement(&g_callcount);
+	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); return 0; }
+	dbglog("FF_Process#%ld: ENTER cur=%p count=%lu", callid, cur, count);
 	DWORD done = 0;
 	while (done < count) {
 		if (cur->outpos < cur->outlen) {
@@ -402,6 +422,7 @@ static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 		if (cur->eof) break;
 		DecodeFrame(cur);
 	}
+	dbglog("FF_Process#%ld: LEAVE done=%lu", callid, done);
 	return done;
 }
 
@@ -409,7 +430,8 @@ static double WINAPI FF_GetGranularity() { return 0.001; }
 
 static double WINAPI FF_SetPosition(DWORD pos)
 {
-	if (!cur) { dbglog("FF_SetPosition: cur=NULL"); return 0; }
+	dbglog("FF_SetPosition: cur=%p pos=%lu", cur, pos);
+	if (!cur) return 0;
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
 	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
@@ -443,7 +465,7 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 	}
 
 	dbglog_init();
-	dbglog("XMPIN_GetInterface called, face=%lu", face);
+	dbglog("XMPIN_GetInterface: face=%lu", face);
 
 	xmpfin  = (XMPFUNC_IN*)faceproc(XMPFUNC_IN_FACE);
 	xmpfmisc = (XMPFUNC_MISC*)faceproc(XMPFUNC_MISC_FACE);
@@ -451,7 +473,8 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 	xmpftext = (XMPFUNC_TEXT*)faceproc(XMPFUNC_TEXT_FACE);
 	xmpver   = xmpfmisc->GetVersion();
 
-	dbglog("XMPlay version: 0x%08X", xmpver);
+	dbglog("XMPIN_GetInterface: xmpfin=%p xmpfmisc=%p xmpffile=%p ver=0x%08X",
+		xmpfin, xmpfmisc, xmpffile, xmpver);
 
 	av_register_all();
 	avformat_network_init();
@@ -464,10 +487,10 @@ BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 	if (reason == DLL_PROCESS_ATTACH) {
 		DisableThreadLibraryCalls(hDLL);
 		dbglog_init();
-		dbglog("DllMain DLL_PROCESS_ATTACH");
+		dbglog("DllMain: DLL_PROCESS_ATTACH hDLL=%p", hDLL);
 	}
 	if (reason == DLL_PROCESS_DETACH) {
-		dbglog("DllMain DLL_PROCESS_DETACH");
+		dbglog("DllMain: DLL_PROCESS_DETACH");
 		dbglog_close();
 	}
 	return TRUE;
