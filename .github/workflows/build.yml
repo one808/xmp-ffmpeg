@@ -23,13 +23,13 @@ jobs:
             git
             base-devel
 
-      - name: Download FFmpeg 3.4
+      - name: Download FFmpeg 3.4.9
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/.."
-          curl -L -o ffmpeg-3.4.tar.xz https://ffmpeg.org/releases/ffmpeg-3.4.tar.xz
-          tar xf ffmpeg-3.4.tar.xz
-          mv ffmpeg-3.4 ffmpeg-src
+          curl -L -o ffmpeg-3.4.9.tar.gz https://ffmpeg.org/releases/ffmpeg-3.4.9.tar.gz
+          tar xzf ffmpeg-3.4.9.tar.gz
+          mv ffmpeg-3.4.9 ffmpeg-src
 
       - name: Build FFmpeg 3.4
         shell: msys2 {0}
