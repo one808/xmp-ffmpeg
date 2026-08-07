@@ -105,6 +105,17 @@ static void FreeCtx(FFContext *ctx)
 {
 	if (!ctx) return;
 	dbglog("FreeCtx(%p)", ctx);
+	// Flush codec first to release any pending references
+	if (ctx->decctx) {
+		avcodec_flush_buffers(ctx->decctx);
+		// Send flush packet to drain decoder
+		avcodec_send_packet(ctx->decctx, NULL);
+		// Receive and discard any remaining frames
+		while (avcodec_receive_frame(ctx->decctx, ctx->frame) == 0) {
+			av_frame_unref(ctx->frame);
+		}
+	}
+	// Free in reverse order of allocation
 	if (ctx->pkt)     av_packet_free(&ctx->pkt);
 	if (ctx->frame)   av_frame_free(&ctx->frame);
 	if (ctx->swrctx)  swr_free(&ctx->swrctx);
@@ -204,49 +215,64 @@ static FFContext *OpenFile(XMPFILE file)
 	return ctx;
 }
 
+static volatile LONG g_in_decode = 0;
+
+static LONG CALLBACK CrashHandler(EXCEPTION_POINTERS *ep)
+{
+	if (g_in_decode) {
+		dbglog("CrashHandler: exception=%p in DecodeFrame", (void*)ep->ExceptionRecord->ExceptionCode);
+		return EXCEPTION_EXECUTE_HANDLER; // suppress the crash
+	}
+	return EXCEPTION_CONTINUE_SEARCH; // not in our code, let it propagate
+}
+
+static void InstallCrashHandler(void)
+{
+	AddVectoredExceptionHandler(1, CrashHandler);
+}
+
 static DWORD DecodeFrame(FFContext *ctx)
 {
+	InterlockedIncrement(&g_in_decode);
 	DWORD result = 0;
-	__try {
-		while (1) {
-			int ret = avcodec_receive_frame(ctx->decctx, ctx->frame);
-			if (ret == 0) {
-				int out_samples = ctx->frame->nb_samples;
-				int total = out_samples * (int)ctx->channels;
-				float *tmp = (float*)malloc(total * sizeof(float));
-				if (!tmp) { result = 0; __leave; }
-				int converted = swr_convert(ctx->swrctx, (uint8_t**)&tmp, out_samples,
-					(const uint8_t**)ctx->frame->extended_data, ctx->frame->nb_samples);
-				if (converted > 0) {
-					total = converted * (int)ctx->channels;
-					float *newbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
-					if (newbuf) {
-						ctx->outbuf = newbuf;
-						memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
-						ctx->outlen += total;
-					}
-				}
-				free(tmp);
-				av_frame_unref(ctx->frame);
-				result = (converted > 0) ? total : 0;
-				__leave;
-			}
-			if (ret == AVERROR_EOF) { ctx->eof = TRUE; result = 0; __leave; }
-			if (ret != AVERROR(EAGAIN)) { result = 0; __leave; }
 
-			ret = av_read_frame(ctx->fmtctx, ctx->pkt);
-			if (ret < 0) {
-				if (ret == AVERROR_EOF) { avcodec_send_packet(ctx->decctx, NULL); continue; }
-				ctx->eof = TRUE; result = 0; __leave;
+	while (1) {
+		int ret = avcodec_receive_frame(ctx->decctx, ctx->frame);
+		if (ret == 0) {
+			int out_samples = ctx->frame->nb_samples;
+			int total = out_samples * (int)ctx->channels;
+			float *tmp = (float*)malloc(total * sizeof(float));
+			if (!tmp) goto done;
+			int converted = swr_convert(ctx->swrctx, (uint8_t**)&tmp, out_samples,
+				(const uint8_t**)ctx->frame->extended_data, ctx->frame->nb_samples);
+			if (converted > 0) {
+				total = converted * (int)ctx->channels;
+				float *newbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
+				if (newbuf) {
+					ctx->outbuf = newbuf;
+					memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
+					ctx->outlen += total;
+				}
 			}
-			if (ctx->pkt->stream_index == ctx->audiostream) avcodec_send_packet(ctx->decctx, ctx->pkt);
-			av_packet_unref(ctx->pkt);
+			free(tmp);
+			av_frame_unref(ctx->frame);
+			result = (converted > 0) ? total : 0;
+			goto done;
 		}
-	} __except(EXCEPTION_EXECUTE_HANDLER) {
-		dbglog("DecodeFrame: EXCEPTION CAUGHT code=%lu", GetExceptionCode());
-		ctx->eof = TRUE;
-		result = 0;
+		if (ret == AVERROR_EOF) { ctx->eof = TRUE; result = 0; goto done; }
+		if (ret != AVERROR(EAGAIN)) { result = 0; goto done; }
+
+		ret = av_read_frame(ctx->fmtctx, ctx->pkt);
+		if (ret < 0) {
+			if (ret == AVERROR_EOF) { avcodec_send_packet(ctx->decctx, NULL); continue; }
+			ctx->eof = TRUE; result = 0; goto done;
+		}
+		if (ctx->pkt->stream_index == ctx->audiostream) avcodec_send_packet(ctx->decctx, ctx->pkt);
+		av_packet_unref(ctx->pkt);
 	}
+
+done:
+	InterlockedDecrement(&g_in_decode);
 	return result;
 }
 
@@ -420,22 +446,16 @@ static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); return 0; }
 	dbglog("FF_Process#%ld: ENTER cur=%p count=%lu", callid, cur, count);
 	DWORD done = 0;
-	__try {
-		while (done < count) {
-			if (cur->outpos < cur->outlen) {
-				DWORD avail = cur->outlen - cur->outpos;
-				DWORD copy = (count - done < avail) ? count - done : avail;
-				memcpy(buffer + done, cur->outbuf + cur->outpos, copy * sizeof(float));
-				cur->outpos += copy; done += copy; continue;
-			}
-			cur->outlen = 0; cur->outpos = 0;
-			if (cur->eof) break;
-			DecodeFrame(cur);
+	while (done < count) {
+		if (cur->outpos < cur->outlen) {
+			DWORD avail = cur->outlen - cur->outpos;
+			DWORD copy = (count - done < avail) ? count - done : avail;
+			memcpy(buffer + done, cur->outbuf + cur->outpos, copy * sizeof(float));
+			cur->outpos += copy; done += copy; continue;
 		}
-	} __except(EXCEPTION_EXECUTE_HANDLER) {
-		dbglog("FF_Process#%ld: EXCEPTION CAUGHT code=%lu", callid, GetExceptionCode());
-		if (cur) cur->eof = TRUE;
-		done = 0;
+		cur->outlen = 0; cur->outpos = 0;
+		if (cur->eof) break;
+		DecodeFrame(cur);
 	}
 	dbglog("FF_Process#%ld: LEAVE done=%lu", callid, done);
 	return done;
@@ -449,13 +469,9 @@ static double WINAPI FF_SetPosition(DWORD pos)
 	if (!cur) return 0;
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
-	__try {
-		if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
-			av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
-		avcodec_flush_buffers(cur->decctx);
-	} __except(EXCEPTION_EXECUTE_HANDLER) {
-		dbglog("FF_SetPosition: EXCEPTION CAUGHT code=%lu", GetExceptionCode());
-	}
+	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
+		av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
+	avcodec_flush_buffers(cur->decctx);
 	cur->outlen = 0; cur->outpos = 0; cur->eof = FALSE;
 	return time;
 }
@@ -507,6 +523,7 @@ BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 		DisableThreadLibraryCalls(hDLL);
 		dbglog_init();
 		dbglog("DllMain: DLL_PROCESS_ATTACH hDLL=%p", hDLL);
+		InstallCrashHandler();
 	}
 	if (reason == DLL_PROCESS_DETACH) {
 		dbglog("DllMain: DLL_PROCESS_DETACH");
