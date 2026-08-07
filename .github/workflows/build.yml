@@ -3,6 +3,9 @@ name: Build xmp-ffmpeg
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-2022
