@@ -84,3 +84,27 @@ jobs:
             xmp-ffmpeg.dll
             xmp-ffmpeg-debug.dll
           retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: xmp-ffmpeg v1.0.0 (FFmpeg 3.4.9)
+          body: |
+            ## XMPlay FFmpeg Audio Decoder Plugin v1.0.0
+
+            Based on FFmpeg 3.4.9 for Windows XP compatibility.
+
+            ### Supported Formats
+            MP3, AAC, OGG, Opus, FLAC, WAV, APE, WMA, AC3, DTS, MPC, WV, TTA, TAK, ALAC, AMR, MP4, MKV, AVI, and more.
+
+            ### Files
+            - `xmp-ffmpeg.dll` - Normal release version
+            - `xmp-ffmpeg-debug.dll` - Debug version with logging
+
+            ### Installation
+            Copy `xmp-ffmpeg.dll` to the XMPlay plugins directory.
+          files: |
+            xmp-ffmpeg.dll
+            xmp-ffmpeg-debug.dll
+          draft: false
