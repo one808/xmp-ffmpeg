@@ -20,7 +20,7 @@ jobs:
           Write-Host "VS Path: $vsPath"
           echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
 
-      - name: Install MSYS2
+      - name: Install MSYS2 with MinGW
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW32
@@ -28,17 +28,18 @@ jobs:
           install: >-
             mingw-w64-i686-gcc
             mingw-w64-i686-make
-            mingw-w64-i686-pkg-config
             git
             base-devel
 
-      - name: Download FFmpeg
+      - name: Download FFmpeg 3.4
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/.."
-          git clone --depth 1 --branch n7.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+          curl -L -o ffmpeg-3.4.tar.xz https://ffmpeg.org/releases/ffmpeg-3.4.tar.xz
+          tar xf ffmpeg-3.4.tar.xz
+          mv ffmpeg-3.4 ffmpeg-src
 
-      - name: Build FFmpeg static libraries
+      - name: Build FFmpeg 3.4 static libraries
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/../ffmpeg-src"
@@ -57,10 +58,10 @@ jobs:
             --disable-avdevice \
             --disable-swscale \
             --disable-debug \
-            --disable-x86asm \
-            --disable-zlib \
+            --disable-encoders \
+            --disable-bsfs \
             --enable-protocol=file \
-            --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr,pcm_s16le,pcm_f32le \
+            --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr \
             --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha \
             --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
           make -j$(nproc)
@@ -87,15 +88,6 @@ jobs:
           cp -f ffmpeg-src/ffbuild/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp -f ffmpeg-src/ffbuild/libswresample/libswresample.a ffmpeg/lib/swresample.lib
 
-          # Copy MinGW runtime libraries
-          ls -la /mingw32/lib/ | grep -E "lib(mingwex|msvcrt|gcc)\.a"
-          cp -f /mingw32/lib/libmingwex.a ffmpeg/lib/ 2>/dev/null || echo "libmingwex.a not found at /mingw32/lib"
-          cp -f /mingw32/lib/libmsvcrt.a ffmpeg/lib/ 2>/dev/null || echo "libmsvcrt.a not found at /mingw32/lib"
-          cp -f /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found at /mingw32/lib"
-          # Try GCC lib directory
-          cp -f /mingw32/lib/gcc/i686-w64-mingw32/*/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found in GCC dir"
-          ls -la ffmpeg/lib/
-
       - name: Build xmp-ffmpeg
         shell: cmd
         run: |
@@ -105,6 +97,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: xmp-ffmpeg-win32-v141_xp
+          name: xmp-ffmpeg-win32
           path: Release/xmp-ffmpeg.dll
           retention-days: 30
