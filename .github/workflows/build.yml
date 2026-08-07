@@ -19,6 +19,7 @@ jobs:
           $vsPath = & $vsWhere -latest -property installationPath
           Write-Host "VS Path: $vsPath"
           echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
+          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" modify --installPath $vsPath --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --add Microsoft.VisualStudio.Component.WinXP --quiet --wait --norestart 2>$null
 
       - name: Install old MinGW via chocolatey
         shell: powershell
