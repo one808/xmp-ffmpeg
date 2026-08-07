@@ -206,39 +206,48 @@ static FFContext *OpenFile(XMPFILE file)
 
 static DWORD DecodeFrame(FFContext *ctx)
 {
-	while (1) {
-		int ret = avcodec_receive_frame(ctx->decctx, ctx->frame);
-		if (ret == 0) {
-			int out_samples = ctx->frame->nb_samples;
-			int total = out_samples * (int)ctx->channels;
-			float *tmp = (float*)malloc(total * sizeof(float));
-			if (!tmp) return 0;
-			int converted = swr_convert(ctx->swrctx, (uint8_t**)&tmp, out_samples,
-				(const uint8_t**)ctx->frame->extended_data, ctx->frame->nb_samples);
-			if (converted > 0) {
-				total = converted * (int)ctx->channels;
-				float *newbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
-				if (newbuf) {
-					ctx->outbuf = newbuf;
-					memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
-					ctx->outlen += total;
+	DWORD result = 0;
+	__try {
+		while (1) {
+			int ret = avcodec_receive_frame(ctx->decctx, ctx->frame);
+			if (ret == 0) {
+				int out_samples = ctx->frame->nb_samples;
+				int total = out_samples * (int)ctx->channels;
+				float *tmp = (float*)malloc(total * sizeof(float));
+				if (!tmp) { result = 0; __leave; }
+				int converted = swr_convert(ctx->swrctx, (uint8_t**)&tmp, out_samples,
+					(const uint8_t**)ctx->frame->extended_data, ctx->frame->nb_samples);
+				if (converted > 0) {
+					total = converted * (int)ctx->channels;
+					float *newbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
+					if (newbuf) {
+						ctx->outbuf = newbuf;
+						memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
+						ctx->outlen += total;
+					}
 				}
+				free(tmp);
+				av_frame_unref(ctx->frame);
+				result = (converted > 0) ? total : 0;
+				__leave;
 			}
-			free(tmp);
-			av_frame_unref(ctx->frame);
-			return (converted > 0) ? total : 0;
-		}
-		if (ret == AVERROR_EOF) { ctx->eof = TRUE; return 0; }
-		if (ret != AVERROR(EAGAIN)) return 0;
+			if (ret == AVERROR_EOF) { ctx->eof = TRUE; result = 0; __leave; }
+			if (ret != AVERROR(EAGAIN)) { result = 0; __leave; }
 
-		ret = av_read_frame(ctx->fmtctx, ctx->pkt);
-		if (ret < 0) {
-			if (ret == AVERROR_EOF) { avcodec_send_packet(ctx->decctx, NULL); continue; }
-			ctx->eof = TRUE; return 0;
+			ret = av_read_frame(ctx->fmtctx, ctx->pkt);
+			if (ret < 0) {
+				if (ret == AVERROR_EOF) { avcodec_send_packet(ctx->decctx, NULL); continue; }
+				ctx->eof = TRUE; result = 0; __leave;
+			}
+			if (ctx->pkt->stream_index == ctx->audiostream) avcodec_send_packet(ctx->decctx, ctx->pkt);
+			av_packet_unref(ctx->pkt);
 		}
-		if (ctx->pkt->stream_index == ctx->audiostream) avcodec_send_packet(ctx->decctx, ctx->pkt);
-		av_packet_unref(ctx->pkt);
+	} __except(EXCEPTION_EXECUTE_HANDLER) {
+		dbglog("DecodeFrame: EXCEPTION CAUGHT code=%lu", GetExceptionCode());
+		ctx->eof = TRUE;
+		result = 0;
 	}
+	return result;
 }
 
 static char *BuildTags(AVFormatContext *fmtctx)
@@ -411,16 +420,22 @@ static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); return 0; }
 	dbglog("FF_Process#%ld: ENTER cur=%p count=%lu", callid, cur, count);
 	DWORD done = 0;
-	while (done < count) {
-		if (cur->outpos < cur->outlen) {
-			DWORD avail = cur->outlen - cur->outpos;
-			DWORD copy = (count - done < avail) ? count - done : avail;
-			memcpy(buffer + done, cur->outbuf + cur->outpos, copy * sizeof(float));
-			cur->outpos += copy; done += copy; continue;
+	__try {
+		while (done < count) {
+			if (cur->outpos < cur->outlen) {
+				DWORD avail = cur->outlen - cur->outpos;
+				DWORD copy = (count - done < avail) ? count - done : avail;
+				memcpy(buffer + done, cur->outbuf + cur->outpos, copy * sizeof(float));
+				cur->outpos += copy; done += copy; continue;
+			}
+			cur->outlen = 0; cur->outpos = 0;
+			if (cur->eof) break;
+			DecodeFrame(cur);
 		}
-		cur->outlen = 0; cur->outpos = 0;
-		if (cur->eof) break;
-		DecodeFrame(cur);
+	} __except(EXCEPTION_EXECUTE_HANDLER) {
+		dbglog("FF_Process#%ld: EXCEPTION CAUGHT code=%lu", callid, GetExceptionCode());
+		if (cur) cur->eof = TRUE;
+		done = 0;
 	}
 	dbglog("FF_Process#%ld: LEAVE done=%lu", callid, done);
 	return done;
@@ -434,9 +449,13 @@ static double WINAPI FF_SetPosition(DWORD pos)
 	if (!cur) return 0;
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
-	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
-		av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
-	avcodec_flush_buffers(cur->decctx);
+	__try {
+		if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
+			av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
+		avcodec_flush_buffers(cur->decctx);
+	} __except(EXCEPTION_EXECUTE_HANDLER) {
+		dbglog("FF_SetPosition: EXCEPTION CAUGHT code=%lu", GetExceptionCode());
+	}
 	cur->outlen = 0; cur->outpos = 0; cur->eof = FALSE;
 	return time;
 }
