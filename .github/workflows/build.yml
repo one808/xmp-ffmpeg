@@ -12,6 +12,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup MSVC
+        shell: powershell
+        run: |
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vsWhere -latest -property installationPath
+          Write-Host "VS Path: $vsPath"
+          echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
+
       - name: Install old MinGW via chocolatey
         shell: powershell
         run: |
