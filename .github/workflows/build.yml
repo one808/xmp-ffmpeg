@@ -23,10 +23,6 @@ jobs:
             git
             base-devel
 
-      - name: Check GCC version
-        shell: msys2 {0}
-        run: gcc --version
-
       - name: Download FFmpeg 3.4
         shell: msys2 {0}
         run: |
@@ -67,7 +63,8 @@ jobs:
           export PATH="/mingw32/bin:$PATH"
           i686-w64-mingw32-g++ -shared -static -o xmp-ffmpeg.dll xmp-ffmpeg.cpp xmp-ffmpeg.def -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -Wl,--out-implib,xmp-ffmpeg.lib
           echo "=== Normal DLL built ==="
-          objdump -p xmp-ffmpeg.dll | grep -A 5 "Export Table"
+          ls -la xmp-ffmpeg.dll
+          objdump -p xmp-ffmpeg.dll | grep -A 3 "Export Table"
 
       - name: Build debug DLL
         shell: msys2 {0}
@@ -76,7 +73,8 @@ jobs:
           export PATH="/mingw32/bin:$PATH"
           i686-w64-mingw32-g++ -shared -static -DXMP_FFMPEG_DEBUG_LOG -o xmp-ffmpeg-debug.dll xmp-ffmpeg.cpp xmp-ffmpeg.def -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -Wl,--out-implib,xmp-ffmpeg-debug.lib
           echo "=== Debug DLL built ==="
-          objdump -p xmp-ffmpeg-debug.dll | grep -A 5 "Export Table"
+          ls -la xmp-ffmpeg-debug.dll
+          objdump -p xmp-ffmpeg-debug.dll | grep -A 3 "Export Table"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
