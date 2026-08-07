@@ -12,10 +12,11 @@
 // ============ DEBUG LOG ============
 // #define XMP_FFMPEG_DEBUG_LOG
 
+static volatile LONG g_callcount = 0;
+
 #ifdef XMP_FFMPEG_DEBUG_LOG
 static FILE *g_logfile = NULL;
 static CRITICAL_SECTION g_logcs;
-static volatile LONG g_callcount = 0;
 
 static void dbglog_init(void) {
 	InitializeCriticalSection(&g_logcs);
