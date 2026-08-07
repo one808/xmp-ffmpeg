@@ -10,7 +10,7 @@
 #include <stdarg.h>
 
 // ============ DEBUG LOG ============
-#define XMP_FFMPEG_DEBUG_LOG
+// #define XMP_FFMPEG_DEBUG_LOG
 
 #ifdef XMP_FFMPEG_DEBUG_LOG
 static FILE *g_logfile = NULL;
