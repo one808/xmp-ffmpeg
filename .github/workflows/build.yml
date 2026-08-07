@@ -12,14 +12,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup MSVC
-        shell: powershell
-        run: |
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath = & $vsWhere -latest -property installationPath
-          Write-Host "VS Path: $vsPath"
-          echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
-
       - name: Install MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -66,20 +58,31 @@ jobs:
           cp ffmpeg-src/libavcodec/libavcodec.a ffmpeg/lib/avcodec.lib
           cp ffmpeg-src/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp ffmpeg-src/libswresample/libswresample.a ffmpeg/lib/swresample.lib
-          # Copy libgcc.a from MinGW
-          cp /mingw32/lib/libgcc.a ffmpeg/lib/ || cp /usr/lib/gcc/i686-w64-mingw32/*/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found"
-          ls -la ffmpeg/lib/
+          cp /mingw32/lib/libgcc.a ffmpeg/lib/ 2>/dev/null || true
 
-      - name: Build plugin
+      - name: Build normal DLL
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE"
           export PATH="/mingw32/bin:$PATH"
           i686-w64-mingw32-g++ -shared -static -o xmp-ffmpeg.dll xmp-ffmpeg.cpp xmp-ffmpeg.def -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -Wl,--out-implib,xmp-ffmpeg.lib
+          echo "=== Normal DLL built ==="
+          objdump -p xmp-ffmpeg.dll | grep -A 5 "Export Table"
 
-      - name: Upload
+      - name: Build debug DLL
+        shell: msys2 {0}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          export PATH="/mingw32/bin:$PATH"
+          i686-w64-mingw32-g++ -shared -static -DXMP_FFMPEG_DEBUG_LOG -o xmp-ffmpeg-debug.dll xmp-ffmpeg.cpp xmp-ffmpeg.def -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -Wl,--out-implib,xmp-ffmpeg-debug.lib
+          echo "=== Debug DLL built ==="
+          objdump -p xmp-ffmpeg-debug.dll | grep -A 5 "Export Table"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: xmp-ffmpeg-win32
-          path: xmp-ffmpeg.dll
+          name: xmp-ffmpeg-builds
+          path: |
+            xmp-ffmpeg.dll
+            xmp-ffmpeg-debug.dll
           retention-days: 30
