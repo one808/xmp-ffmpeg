@@ -500,8 +500,9 @@ static double WINAPI FF_SetPosition(DWORD pos)
 static XMPIN xmpin = {
 	XMPIN_FLAG_CANSTREAM,
 	"FFmpeg decoder",
-	"Audio\0mp3/mp2/mpga/flac/ogg/oga/opus/wav/aiff/ape/ac3/dts"
-	"/m4a/m4b/mp4/mov/3gp/webm/mka/asf/wmv/avi/mkv/thd/mlp/eac3/dtsma/dtshd",
+	"Audio\0mp3/aac/m4a/m4b/ogg/opus/flac/wav/aiff/ape/wma/ac3/dts/mpc/wv/tta/tak/alac/amr"
+	"/mp2/mpa/mpga/ra/spx/snd/au/thd/mlp/eac3/dtsma/dtshd"
+	"/webm/mka/oga/3gp/mp4/mov/asf/wmv/avi/mkv",
 	NULL, NULL,
 	FF_CheckFile, FF_GetFileInfo, FF_Open, FF_Close, NULL, FF_SetFormat,
 	FF_GetTags, FF_GetInfoText, FF_GetGeneralInfo, FF_GetMessage, FF_SetPosition,
