@@ -19,20 +19,24 @@ jobs:
           $vsPath = & $vsWhere -latest -property installationPath
           Write-Host "VS Path: $vsPath"
           echo "VS_PATH=$vsPath" >> $env:GITHUB_ENV
-          & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" modify --installPath $vsPath --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --add Microsoft.VisualStudio.Component.WinXP --quiet --wait --norestart 2>$null
 
-      - name: Install old MinGW via chocolatey
-        shell: powershell
-        run: |
-          choco install mingw -y --no-progress
-          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $env:GITHUB_PATH
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW32
+          update: true
+          install: >-
+            mingw-w64-i686-gcc
+            mingw-w64-i686-make
+            git
+            base-devel
 
       - name: Check GCC version
-        shell: bash
+        shell: msys2 {0}
         run: gcc --version
 
       - name: Download FFmpeg 3.4
-        shell: bash
+        shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           curl -L -o ffmpeg-3.4.tar.xz https://ffmpeg.org/releases/ffmpeg-3.4.tar.xz
@@ -40,7 +44,7 @@ jobs:
           mv ffmpeg-3.4 ffmpeg-src
 
       - name: Build FFmpeg 3.4
-        shell: bash
+        shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/../ffmpeg-src"
           export CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
@@ -48,7 +52,7 @@ jobs:
           make -j$(nproc)
 
       - name: Prepare SDK
-        shell: bash
+        shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE/.."
           mkdir -p ffmpeg/include/libavformat ffmpeg/include/libavcodec ffmpeg/include/libavutil ffmpeg/include/libswresample ffmpeg/lib
@@ -62,16 +66,20 @@ jobs:
           cp ffmpeg-src/libavcodec/libavcodec.a ffmpeg/lib/avcodec.lib
           cp ffmpeg-src/libavutil/libavutil.a ffmpeg/lib/avutil.lib
           cp ffmpeg-src/libswresample/libswresample.a ffmpeg/lib/swresample.lib
+          # Copy libgcc.a from MinGW
+          cp /mingw32/lib/libgcc.a ffmpeg/lib/ || cp /usr/lib/gcc/i686-w64-mingw32/*/libgcc.a ffmpeg/lib/ 2>/dev/null || echo "libgcc.a not found"
+          ls -la ffmpeg/lib/
 
       - name: Build plugin
-        shell: cmd
+        shell: msys2 {0}
         run: |
-          call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
-          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /m
+          cd "$GITHUB_WORKSPACE"
+          export PATH="/mingw32/bin:$PATH"
+          i686-w64-mingw32-g++ -shared -o xmp-ffmpeg.dll xmp-ffmpeg.cpp -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -lgcc_s -lgcc -Wl,--out-implib,xmp-ffmpeg.lib
 
       - name: Upload
         uses: actions/upload-artifact@v7
         with:
           name: xmp-ffmpeg-win32
-          path: Release/xmp-ffmpeg.dll
+          path: xmp-ffmpeg.dll
           retention-days: 30
