@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           cd "$GITHUB_WORKSPACE/../ffmpeg-src"
-          ./configure --arch=x86 --target-os=win32 --enable-cross-compile --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-encoders --disable-bsfs --disable-x86asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
+          ./configure --arch=x86 --target-os=win32 --enable-cross-compile --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-everything --disable-avfilter --disable-avdevice --disable-swscale --disable-debug --disable-encoders --disable-bsfs --disable-x86asm --disable-asm --disable-inline-asm --enable-protocol=file --enable-demuxer=mp3,aac,ogg,flac,wav,aiff,ape,asf,matroska,mp4,mov,avi,dts,eac3,mlp,truehd,mpc,tta,wv,amr --enable-decoder=mp3,mp3float,aac,aac_latm,vorbis,opus,flac,wmav1,wmav2,ac3,eac3,dca,truehd,alac,ape,tta,wavpack,mpc7,mpc8,amrnb,amrwb,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_u8,pcm_alaw,pcm_mulaw,adpcm_ima_qt,adpcm_ima_wav,adpcm_ms,adpcm_swf,adpcm_yamaha --enable-parser=mpegaudio,aac,ac3,dca,flac,vorbis,opus
           make -j$(nproc)
 
       - name: Prepare SDK
