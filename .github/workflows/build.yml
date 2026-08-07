@@ -67,7 +67,7 @@ jobs:
         shell: cmd
         run: |
           call "%VS_PATH%\VC\Auxiliary\Build\vcvarsall.bat" x86
-          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /m
+          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /m
 
       - name: Upload
         uses: actions/upload-artifact@v7
