@@ -123,7 +123,6 @@ static FFContext *OpenFile(XMPFILE file)
 	if (avcodec_parameters_to_context(ctx->decctx, stream->codecpar) < 0) { FreeCtx(ctx); return NULL; }
 	if (avcodec_open2(ctx->decctx, codec, NULL) < 0) { FreeCtx(ctx); return NULL; }
 
-	// FFmpeg 3.4: use channels directly
 	ctx->channels = ctx->decctx->channels;
 	ctx->samplerate = ctx->decctx->sample_rate;
 	ctx->bitspersample = av_get_bytes_per_sample(ctx->decctx->sample_fmt) * 8;
@@ -139,7 +138,6 @@ static FFContext *OpenFile(XMPFILE file)
 	ctx->swrctx = swr_alloc();
 	if (!ctx->swrctx) { FreeCtx(ctx); return NULL; }
 
-	// FFmpeg 3.4: use old channel layout API
 	av_opt_set_int(ctx->swrctx, "in_channel_count",  ctx->decctx->channels, 0);
 	av_opt_set_int(ctx->swrctx, "out_channel_count", ctx->decctx->channels, 0);
 	av_opt_set_int(ctx->swrctx, "in_sample_rate",   ctx->samplerate, 0);
@@ -289,6 +287,7 @@ static char *WINAPI FF_GetTags() { return (cur && cur->fmtctx) ? BuildTags(cur->
 
 static void WINAPI FF_SetFormat(XMPFORMAT *form)
 {
+	if (!cur) return;
 	form->res  = 4;
 	form->chan = (WORD)cur->channels;
 	form->rate = cur->samplerate;
@@ -296,6 +295,7 @@ static void WINAPI FF_SetFormat(XMPFORMAT *form)
 
 static void WINAPI FF_GetInfoText(char *format, char *length)
 {
+	if (!cur) return;
 	if (format) {
 		format += sprintf(format, "%s", GetCodecName(cur));
 		if (cur->bitrate > 0) format += sprintf(format, " - %.0fkbps", cur->bitrate);
@@ -305,6 +305,7 @@ static void WINAPI FF_GetInfoText(char *format, char *length)
 
 static void WINAPI FF_GetGeneralInfo(char *buf)
 {
+	if (!cur) return;
 	buf += sprintf(buf, "Codec\t%s", GetCodecName(cur));
 	if (cur->decctx->codec->long_name) buf += sprintf(buf, " (%s)", cur->decctx->codec->long_name);
 	*buf++ = '\r';
@@ -321,6 +322,7 @@ static void WINAPI FF_GetGeneralInfo(char *buf)
 
 static void WINAPI FF_GetMessage(char *buf)
 {
+	if (!cur || !cur->fmtctx) return;
 	AVDictionary *meta = cur->fmtctx->metadata;
 	if (!meta) return;
 	AVDictionaryEntry *entry = NULL;
@@ -331,6 +333,7 @@ static void WINAPI FF_GetMessage(char *buf)
 
 static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 {
+	if (!cur) return 0;
 	DWORD done = 0;
 	while (done < count) {
 		if (cur->outpos < cur->outlen) {
@@ -350,6 +353,7 @@ static double WINAPI FF_GetGranularity() { return 0.001; }
 
 static double WINAPI FF_SetPosition(DWORD pos)
 {
+	if (!cur) return 0;
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
 	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
