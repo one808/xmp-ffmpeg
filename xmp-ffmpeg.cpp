@@ -331,16 +331,33 @@ static BOOL WINAPI FF_CheckFile(const char *filename, XMPFILE file)
 	if (xmpffile->Read(file, head, sizeof(head)) != sizeof(head)) { xmpffile->Seek(file, 0); return FALSE; }
 	xmpffile->Seek(file, 0);
 	DWORD dw = *(DWORD*)head;
+	// ID3 tag
 	if (dw == MAKEFOURCC('I','D','3',3) || dw == MAKEFOURCC('I','D','3',4)) return TRUE;
+	// MP3 sync word
 	if ((head[0]==0xFF&&(head[1]&0xE0)==0xE0)) return TRUE;
+	// AAC ADTS
+	if ((head[0]==0xFF && (head[1]&0xF0)==0xF0)) return TRUE;
+	// FLAC
 	if (dw == MAKEFOURCC('f','L','a','C')) return TRUE;
+	// OGG (also covers Opus)
 	if (dw == MAKEFOURCC('O','g','g','S')) return TRUE;
+	// WAV/RIFF
 	if (dw == MAKEFOURCC('R','I','F','F')) return TRUE;
+	// AIFF
 	if (dw == MAKEFOURCC('F','O','R','M')) return TRUE;
+	// MP4/MOV/M4A/M4B/3GP/WEBM/MKA
 	if (dw == MAKEFOURCC('f','t','y','p')) return TRUE;
+	// WMA/ASF
 	if (dw == 0x75B22630) return TRUE;
+	// APE
 	if (dw == MAKEFOURCC('M','A','C',' ')) return TRUE;
+	// WavPack
+	if (dw == MAKEFOURCC('w','v','p','k')) return TRUE;
+	// TTA
+	if (dw == MAKEFOURCC('T','T','A','1')) return TRUE;
+	// AC3
 	if (dw == 0x0B77) return TRUE;
+	// DTS/THD/MLP/EAC3/DTSMA/DTSHD
 	if (dw == 0x0180FE7F || dw == 0xFE7F0180) return TRUE;
 	return FALSE;
 }
