@@ -216,11 +216,13 @@ static FFContext *OpenFile(XMPFILE file)
 }
 
 static volatile LONG g_in_decode = 0;
+static volatile LONG g_in_plugin = 0;
 
 static LONG CALLBACK CrashHandler(EXCEPTION_POINTERS *ep)
 {
-	if (g_in_decode) {
-		dbglog("CrashHandler: exception=%p in DecodeFrame", (void*)ep->ExceptionRecord->ExceptionCode);
+	if (g_in_decode || g_in_plugin) {
+		dbglog("CrashHandler: exception=0x%lX in plugin code (in_decode=%ld in_plugin=%ld)",
+			ep->ExceptionRecord->ExceptionCode, g_in_decode, g_in_plugin);
 		return EXCEPTION_EXECUTE_HANDLER; // suppress the crash
 	}
 	return EXCEPTION_CONTINUE_SEARCH; // not in our code, let it propagate
@@ -353,6 +355,8 @@ static DWORD WINAPI FF_GetFileInfo(const char *filename, XMPFILE file, float **l
 
 static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 {
+	InterlockedIncrement(&g_in_plugin);
+	DWORD result = 0;
 	dbglog("FF_Open: ENTER filename=%s file=%p cur=%p", filename ? filename : "(null)", file, cur);
 	FFContext *old = cur;
 	if (old) {
@@ -360,7 +364,7 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 	}
 	cur = OpenFile(file);
 	dbglog("FF_Open: OpenFile returned cur=%p", cur);
-	if (!cur) return 0;
+	if (!cur) goto done;
 	if (cur->totalsamples) {
 		float length = (float)((double)cur->totalsamples / cur->samplerate);
 		dbglog("FF_Open: calling SetLength, xmpfin=%p", xmpfin);
@@ -375,12 +379,16 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 		DWORD br = cur->bitrate ? (DWORD)(cur->bitrate * 125) : cur->samplerate * cur->channels * 2;
 		xmpffile->NetSetRate(file, br);
 	}
-	dbglog("FF_Open: LEAVE cur=%p", cur);
-	return 1;
+	result = 1;
+done:
+	dbglog("FF_Open: LEAVE cur=%p result=%lu", cur, result);
+	InterlockedDecrement(&g_in_plugin);
+	return result;
 }
 
 static void WINAPI FF_Close()
 {
+	InterlockedIncrement(&g_in_plugin);
 	dbglog("FF_Close: ENTER cur=%p", cur);
 	if (cur) {
 		dbglog("FF_Close: freeing ctx=%p fmtctx=%p", cur, cur->fmtctx);
@@ -388,17 +396,20 @@ static void WINAPI FF_Close()
 	FreeCtx(cur);
 	cur = NULL;
 	dbglog("FF_Close: LEAVE cur=NULL");
+	InterlockedDecrement(&g_in_plugin);
 }
 
 static char *WINAPI FF_GetTags() { return (cur && cur->fmtctx) ? BuildTags(cur->fmtctx) : NULL; }
 
 static void WINAPI FF_SetFormat(XMPFORMAT *form)
 {
+	InterlockedIncrement(&g_in_plugin);
 	dbglog("FF_SetFormat: cur=%p", cur);
-	if (!cur) return;
+	if (!cur) { InterlockedDecrement(&g_in_plugin); return; }
 	form->res  = 4;
 	form->chan = (WORD)cur->channels;
 	form->rate = cur->samplerate;
+	InterlockedDecrement(&g_in_plugin);
 }
 
 static void WINAPI FF_GetInfoText(char *format, char *length)
@@ -442,8 +453,9 @@ static void WINAPI FF_GetMessage(char *buf)
 
 static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 {
+	InterlockedIncrement(&g_in_plugin);
 	LONG callid = InterlockedIncrement(&g_callcount);
-	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); return 0; }
+	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); InterlockedDecrement(&g_in_plugin); return 0; }
 	dbglog("FF_Process#%ld: ENTER cur=%p count=%lu", callid, cur, count);
 	DWORD done = 0;
 	while (done < count) {
@@ -458,6 +470,7 @@ static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 		DecodeFrame(cur);
 	}
 	dbglog("FF_Process#%ld: LEAVE done=%lu", callid, done);
+	InterlockedDecrement(&g_in_plugin);
 	return done;
 }
 
@@ -465,14 +478,16 @@ static double WINAPI FF_GetGranularity() { return 0.001; }
 
 static double WINAPI FF_SetPosition(DWORD pos)
 {
+	InterlockedIncrement(&g_in_plugin);
 	dbglog("FF_SetPosition: cur=%p pos=%lu", cur, pos);
-	if (!cur) return 0;
+	if (!cur) { InterlockedDecrement(&g_in_plugin); return 0; }
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
 	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
 		av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
 	avcodec_flush_buffers(cur->decctx);
 	cur->outlen = 0; cur->outpos = 0; cur->eof = FALSE;
+	InterlockedDecrement(&g_in_plugin);
 	return time;
 }
 
