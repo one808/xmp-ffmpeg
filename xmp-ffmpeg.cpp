@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// MAKEFOURCC may not be defined in newer Windows SDK versions
 #ifndef MAKEFOURCC
 #define MAKEFOURCC(ch0, ch1, ch2, ch3) \
     ((DWORD)(BYTE)(ch0) | ((DWORD)(BYTE)(ch1) << 8) | \
@@ -167,9 +166,12 @@ static DWORD DecodeFrame(FFContext *ctx)
 				(const uint8_t**)ctx->frame->extended_data, ctx->frame->nb_samples);
 			if (converted > 0) {
 				total = converted * (int)ctx->channels;
-				ctx->outbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
-				if (ctx->outbuf) memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
-				ctx->outlen += total;
+				float *newbuf = (float*)realloc(ctx->outbuf, (ctx->outlen + total) * sizeof(float));
+				if (newbuf) {
+					ctx->outbuf = newbuf;
+					memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
+					ctx->outlen += total;
+				}
 			}
 			free(tmp);
 			av_frame_unref(ctx->frame);
@@ -222,6 +224,7 @@ static char *BuildTags(AVFormatContext *fmtctx)
 
 static const char *GetCodecName(FFContext *ctx)
 {
+	if (!ctx || !ctx->decctx) return "unknown";
 	const AVCodecDescriptor *desc = avcodec_descriptor_get(ctx->decctx->codec_id);
 	return (desc && desc->name) ? desc->name : "unknown";
 }
@@ -297,26 +300,27 @@ static void WINAPI FF_GetInfoText(char *format, char *length)
 {
 	if (!cur) return;
 	if (format) {
-		format += sprintf(format, "%s", GetCodecName(cur));
-		if (cur->bitrate > 0) format += sprintf(format, " - %.0fkbps", cur->bitrate);
-		sprintf(format, " - %dhz", cur->samplerate);
+		const char *name = GetCodecName(cur);
+		int off = sprintf(format, "%s", name);
+		if (cur->bitrate > 0) off += sprintf(format + off, " - %.0fkbps", cur->bitrate);
+		sprintf(format + off, " - %dhz", cur->samplerate);
 	}
 }
 
 static void WINAPI FF_GetGeneralInfo(char *buf)
 {
 	if (!cur) return;
-	buf += sprintf(buf, "Codec\t%s", GetCodecName(cur));
-	if (cur->decctx->codec->long_name) buf += sprintf(buf, " (%s)", cur->decctx->codec->long_name);
-	*buf++ = '\r';
-	if (cur->bitrate > 0) buf += sprintf(buf, "Bit rate\t%.0f kbps\r", cur->bitrate);
-	buf += sprintf(buf, "Sample rate\t%u hz\rChannels\t%u\rResolution\t", cur->samplerate, cur->channels);
-	if (cur->bitspersample > 0) buf += sprintf(buf, "%u bit", cur->bitspersample);
-	else buf += sprintf(buf, "float");
-	*buf++ = '\r';
+	int off = sprintf(buf, "Codec\t%s", GetCodecName(cur));
+	if (cur->decctx->codec->long_name) off += sprintf(buf + off, " (%s)", cur->decctx->codec->long_name);
+	buf[off++] = '\r';
+	if (cur->bitrate > 0) off += sprintf(buf + off, "Bit rate\t%.0f kbps\r", cur->bitrate);
+	off += sprintf(buf + off, "Sample rate\t%u hz\rChannels\t%u\rResolution\t", cur->samplerate, cur->channels);
+	if (cur->bitspersample > 0) off += sprintf(buf + off, "%u bit", cur->bitspersample);
+	else off += sprintf(buf + off, "float");
+	buf[off++] = '\r';
 	if (cur->totalsamples) {
 		DWORD secs = (DWORD)((double)cur->totalsamples / cur->samplerate);
-		buf += sprintf(buf, "Length\t%u:%02u:%02u\r", secs/3600, (secs/60)%60, secs%60);
+		sprintf(buf + off, "Length\t%u:%02u:%02u\r", secs/3600, (secs/60)%60, secs%60);
 	}
 }
 
