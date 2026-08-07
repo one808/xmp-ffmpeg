@@ -8,6 +8,41 @@
 #include <stdlib.h>
 #include <string.h>
 
+// ============ DEBUG LOG CONFIGURATION ============
+// Uncomment the line below to enable debug logging to xmp-ffmpeg-debug.log
+// #define XMP_FFMPEG_DEBUG_LOG
+// =================================================
+
+#ifdef XMP_FFMPEG_DEBUG_LOG
+static FILE *g_logfile = NULL;
+static CRITICAL_SECTION g_logcs;
+static void dbglog_init(void) {
+	InitializeCriticalSection(&g_logcs);
+	g_logfile = fopen("xmp-ffmpeg-debug.log", "w");
+	if (g_logfile) fprintf(g_logfile, "[xmp-ffmpeg] Debug log started, PID=%lu\n", GetCurrentProcessId());
+}
+static void dbglog(const char *fmt, ...) {
+	if (!g_logfile) return;
+	EnterCriticalSection(&g_logcs);
+	va_list ap;
+	va_start(ap, fmt);
+	fprintf(g_logfile, "[%lu] ", GetTickCount());
+	vfprintf(g_logfile, fmt, ap);
+	fprintf(g_logfile, "\n");
+	fflush(g_logfile);
+	va_end(ap);
+	LeaveCriticalSection(&g_logcs);
+}
+static void dbglog_close(void) {
+	if (g_logfile) { fclose(g_logfile); g_logfile = NULL; }
+	DeleteCriticalSection(&g_logcs);
+}
+#else
+#define dbglog_init()
+#define dbglog(...)
+#define dbglog_close()
+#endif
+
 #ifndef MAKEFOURCC
 #define MAKEFOURCC(ch0, ch1, ch2, ch3) \
     ((DWORD)(BYTE)(ch0) | ((DWORD)(BYTE)(ch1) << 8) | \
@@ -57,6 +92,7 @@ static FFContext *cur;
 static void FreeCtx(FFContext *ctx)
 {
 	if (!ctx) return;
+	dbglog("FreeCtx(%p)", ctx);
 	if (ctx->pkt)     av_packet_free(&ctx->pkt);
 	if (ctx->frame)   av_frame_free(&ctx->frame);
 	if (ctx->swrctx)  swr_free(&ctx->swrctx);
@@ -94,8 +130,9 @@ static int64_t xmp_seek(void *opaque, int64_t offset, int whence)
 
 static FFContext *OpenFile(XMPFILE file)
 {
+	dbglog("OpenFile(%p)", file);
 	FFContext *ctx = (FFContext*)calloc(1, sizeof(FFContext));
-	if (!ctx) return NULL;
+	if (!ctx) { dbglog("OpenFile: calloc failed"); return NULL; }
 
 	uint8_t *avio_buf = (uint8_t*)av_malloc(32768);
 	if (!avio_buf) { free(ctx); return NULL; }
@@ -150,6 +187,7 @@ static FFContext *OpenFile(XMPFILE file)
 	ctx->frame  = av_frame_alloc();
 	if (!ctx->pkt || !ctx->frame) { FreeCtx(ctx); return NULL; }
 
+	dbglog("OpenFile: OK ctx=%p fmtctx=%p decctx=%p", ctx, ctx->fmtctx, ctx->decctx);
 	return ctx;
 }
 
@@ -171,6 +209,8 @@ static DWORD DecodeFrame(FFContext *ctx)
 					ctx->outbuf = newbuf;
 					memcpy(ctx->outbuf + ctx->outlen, tmp, total * sizeof(float));
 					ctx->outlen += total;
+				} else {
+					dbglog("DecodeFrame: realloc FAILED outlen=%lu total=%d", ctx->outlen, total);
 				}
 			}
 			free(tmp);
@@ -267,7 +307,13 @@ static DWORD WINAPI FF_GetFileInfo(const char *filename, XMPFILE file, float **l
 
 static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 {
+	dbglog("FF_Open: filename=%s file=%p", filename ? filename : "(null)", file);
+	FFContext *old = cur;
+	if (old) {
+		dbglog("FF_Open: WARNING cur=%p not NULL before new open!", old);
+	}
 	cur = OpenFile(file);
+	dbglog("FF_Open: cur=%p", cur);
 	if (!cur) return 0;
 	if (cur->totalsamples) {
 		float length = (float)((double)cur->totalsamples / cur->samplerate);
@@ -284,13 +330,19 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 	return 1;
 }
 
-static void WINAPI FF_Close() { FreeCtx(cur); cur = NULL; }
+static void WINAPI FF_Close()
+{
+	dbglog("FF_Close: cur=%p", cur);
+	FreeCtx(cur);
+	cur = NULL;
+	dbglog("FF_Close: done, cur=NULL");
+}
 
 static char *WINAPI FF_GetTags() { return (cur && cur->fmtctx) ? BuildTags(cur->fmtctx) : NULL; }
 
 static void WINAPI FF_SetFormat(XMPFORMAT *form)
 {
-	if (!cur) return;
+	if (!cur) { dbglog("FF_SetFormat: cur=NULL!"); return; }
 	form->res  = 4;
 	form->chan = (WORD)cur->channels;
 	form->rate = cur->samplerate;
@@ -337,7 +389,7 @@ static void WINAPI FF_GetMessage(char *buf)
 
 static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 {
-	if (!cur) return 0;
+	if (!cur) { dbglog("FF_Process: cur=NULL, returning 0"); return 0; }
 	DWORD done = 0;
 	while (done < count) {
 		if (cur->outpos < cur->outlen) {
@@ -357,7 +409,7 @@ static double WINAPI FF_GetGranularity() { return 0.001; }
 
 static double WINAPI FF_SetPosition(DWORD pos)
 {
-	if (!cur) return 0;
+	if (!cur) { dbglog("FF_SetPosition: cur=NULL"); return 0; }
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
 	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
@@ -390,11 +442,16 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 		return NULL;
 	}
 
+	dbglog_init();
+	dbglog("XMPIN_GetInterface called, face=%lu", face);
+
 	xmpfin  = (XMPFUNC_IN*)faceproc(XMPFUNC_IN_FACE);
 	xmpfmisc = (XMPFUNC_MISC*)faceproc(XMPFUNC_MISC_FACE);
 	xmpffile = (XMPFUNC_FILE*)faceproc(XMPFUNC_FILE_FACE);
 	xmpftext = (XMPFUNC_TEXT*)faceproc(XMPFUNC_TEXT_FACE);
 	xmpver   = xmpfmisc->GetVersion();
+
+	dbglog("XMPlay version: 0x%08X", xmpver);
 
 	av_register_all();
 	avformat_network_init();
@@ -404,6 +461,14 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 
 BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 {
-	if (reason == DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(hDLL);
+	if (reason == DLL_PROCESS_ATTACH) {
+		DisableThreadLibraryCalls(hDLL);
+		dbglog_init();
+		dbglog("DllMain DLL_PROCESS_ATTACH");
+	}
+	if (reason == DLL_PROCESS_DETACH) {
+		dbglog("DllMain DLL_PROCESS_DETACH");
+		dbglog_close();
+	}
 	return TRUE;
 }
