@@ -218,25 +218,25 @@ static FFContext *OpenFile(XMPFILE file)
 static volatile LONG g_in_decode = 0;
 static volatile LONG g_in_plugin = 0;
 
-static LONG CALLBACK CrashHandler(EXCEPTION_POINTERS *ep)
+// Unhandled exception filter - called just before process terminates
+static LONG WINAPI TopLevelExceptionFilter(EXCEPTION_POINTERS *ep)
 {
-	// Catch access violations that happen during or after our plugin callbacks
-	// This prevents XMPlay from crashing even if the issue is in XMPlay's code
-	if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
-	    ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW ||
-	    ep->ExceptionRecord->ExceptionCode == EXCEPTION_ARRAY_BOUNDS_EXCEEDED) {
-		dbglog("CrashHandler: exception=0x%lX addr=%p in_decode=%ld in_plugin=%ld",
-			ep->ExceptionRecord->ExceptionCode,
-			(void*)ep->ExceptionRecord->ExceptionInformation[1],
-			g_in_decode, g_in_plugin);
-		return EXCEPTION_EXECUTE_HANDLER; // suppress the crash
-	}
-	return EXCEPTION_CONTINUE_SEARCH;
+	dbglog("CRASH: exception=0x%lX addr=%p in_decode=%ld in_plugin=%ld",
+		ep->ExceptionRecord->ExceptionCode,
+		(void*)ep->ExceptionRecord->ExceptionInformation[1],
+		g_in_decode, g_in_plugin);
+
+	// Try to flush the log file
+	dbglog("CRASH: terminating process gracefully");
+	dbglog_close();
+
+	// Terminate gracefully instead of showing crash dialog
+	ExitProcess(1);
 }
 
 static void InstallCrashHandler(void)
 {
-	AddVectoredExceptionHandler(1, CrashHandler);
+	SetUnhandledExceptionFilter(TopLevelExceptionFilter);
 }
 
 static DWORD DecodeFrame(FFContext *ctx)
