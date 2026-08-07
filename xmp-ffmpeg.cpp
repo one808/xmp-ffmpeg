@@ -1,5 +1,6 @@
 // XMPlay FFmpeg input plugin
 // Decodes audio via FFmpeg (libavformat + libavcodec + libswresample)
+// Compatible with FFmpeg 3.4 (Windows XP support)
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -114,7 +115,7 @@ static FFContext *OpenFile(XMPFILE file)
 	if (ctx->audiostream < 0) { FreeCtx(ctx); return NULL; }
 
 	AVStream *stream = ctx->fmtctx->streams[ctx->audiostream];
-	const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
+	AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
 	if (!codec) { FreeCtx(ctx); return NULL; }
 
 	ctx->decctx = avcodec_alloc_context3(codec);
@@ -122,7 +123,8 @@ static FFContext *OpenFile(XMPFILE file)
 	if (avcodec_parameters_to_context(ctx->decctx, stream->codecpar) < 0) { FreeCtx(ctx); return NULL; }
 	if (avcodec_open2(ctx->decctx, codec, NULL) < 0) { FreeCtx(ctx); return NULL; }
 
-	ctx->channels = ctx->decctx->ch_layout.nb_channels;
+	// FFmpeg 3.4: use channels directly
+	ctx->channels = ctx->decctx->channels;
 	ctx->samplerate = ctx->decctx->sample_rate;
 	ctx->bitspersample = av_get_bytes_per_sample(ctx->decctx->sample_fmt) * 8;
 
@@ -137,14 +139,13 @@ static FFContext *OpenFile(XMPFILE file)
 	ctx->swrctx = swr_alloc();
 	if (!ctx->swrctx) { FreeCtx(ctx); return NULL; }
 
-	AVChannelLayout out_layout;
-	av_channel_layout_default(&out_layout, (int)ctx->channels);
-	av_opt_set_chlayout(ctx->swrctx, "in_chlayout",  &ctx->decctx->ch_layout, 0);
-	av_opt_set_chlayout(ctx->swrctx, "out_chlayout", &out_layout, 0);
+	// FFmpeg 3.4: use old channel layout API
+	av_opt_set_int(ctx->swrctx, "in_channel_count",  ctx->decctx->channels, 0);
+	av_opt_set_int(ctx->swrctx, "out_channel_count", ctx->decctx->channels, 0);
 	av_opt_set_int(ctx->swrctx, "in_sample_rate",   ctx->samplerate, 0);
 	av_opt_set_int(ctx->swrctx, "out_sample_rate",  ctx->samplerate, 0);
-	av_opt_set_sample_fmt(ctx->swrctx, "in_samplefmt",  ctx->decctx->sample_fmt, 0);
-	av_opt_set_sample_fmt(ctx->swrctx, "out_samplefmt", AV_SAMPLE_FMT_FLT, 0);
+	av_opt_set_sample_fmt(ctx->swrctx, "in_sample_fmt",  ctx->decctx->sample_fmt, 0);
+	av_opt_set_sample_fmt(ctx->swrctx, "out_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
 
 	if (swr_init(ctx->swrctx) < 0) { FreeCtx(ctx); return NULL; }
 
@@ -387,10 +388,7 @@ XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 	xmpftext = (XMPFUNC_TEXT*)faceproc(XMPFUNC_TEXT_FACE);
 	xmpver   = xmpfmisc->GetVersion();
 
-	// av_register_all() was removed in FFmpeg 5.0+
-#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(58, 9, 100)
 	av_register_all();
-#endif
 	avformat_network_init();
 
 	return &xmpin;
@@ -400,52 +398,4 @@ BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 {
 	if (reason == DLL_PROCESS_ATTACH) DisableThreadLibraryCalls(hDLL);
 	return TRUE;
-}
-
-// Stubs for MinGW runtime functions when linking with MSVC
-extern "C" {
-	// Define timespec for MSVC (not available in MSVC's time.h)
-#ifndef _TIMESPEC_DEFINED
-#define _TIMESPEC_DEFINED
-	struct timespec {
-		time_t tv_sec;
-		long tv_nsec;
-	};
-#endif
-
-	int __cdecl _clock_gettime32(int clk_id, struct timespec *tp) {
-		static int initialized = 0;
-		static LARGE_INTEGER frequency;
-		if (!initialized) {
-			QueryPerformanceFrequency(&frequency);
-			initialized = 1;
-		}
-		LARGE_INTEGER counter;
-		QueryPerformanceCounter(&counter);
-		tp->tv_sec = counter.QuadPart / frequency.QuadPart;
-		tp->tv_nsec = (long)((counter.QuadPart % frequency.QuadPart) * 1000000000 / frequency.QuadPart);
-		return 0;
-	}
-
-	int __cdecl _nanosleep32(const struct timespec *req, struct timespec *rem) {
-		DWORD ms = (DWORD)(req->tv_sec * 1000 + req->tv_nsec / 1000000);
-		if (ms == 0) ms = 1;
-		Sleep(ms);
-		if (rem) {
-			rem->tv_sec = 0;
-			rem->tv_nsec = 0;
-		}
-		return 0;
-	}
-
-	void __cdecl ___mingw_raise_matherr(int type, const char *name, double a1, double a2, double r) {
-	}
-
-	int __cdecl ___mingw_snprintf(char *buf, size_t size, const char *fmt, ...) {
-		va_list args;
-		va_start(args, fmt);
-		int ret = _vsnprintf_s(buf, size, _TRUNCATE, fmt, args);
-		va_end(args);
-		return ret;
-	}
 }
