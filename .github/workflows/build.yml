@@ -75,7 +75,7 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"
           export PATH="/mingw32/bin:$PATH"
-          i686-w64-mingw32-g++ -shared -o xmp-ffmpeg.dll xmp-ffmpeg.cpp -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -lgcc_s -lgcc -Wl,--out-implib,xmp-ffmpeg.lib
+          i686-w64-mingw32-g++ -shared -static -o xmp-ffmpeg.dll xmp-ffmpeg.cpp -I../ffmpeg/include -L../ffmpeg/lib -lavformat -lavcodec -lavutil -lswresample -Wl,--out-implib,xmp-ffmpeg.lib
 
       - name: Upload
         uses: actions/upload-artifact@v7
