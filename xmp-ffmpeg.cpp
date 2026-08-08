@@ -13,6 +13,7 @@
 // #define XMP_FFMPEG_DEBUG_LOG
 
 static volatile LONG g_callcount = 0;
+static CRITICAL_SECTION g_ctxcs;
 
 #ifdef XMP_FFMPEG_DEBUG_LOG
 static FILE *g_logfile = NULL;
@@ -219,25 +220,14 @@ static FFContext *OpenFile(XMPFILE file)
 static volatile LONG g_in_decode = 0;
 static volatile LONG g_in_plugin = 0;
 
-// Unhandled exception filter - called just before process terminates
-static LONG WINAPI TopLevelExceptionFilter(EXCEPTION_POINTERS *ep)
+static void ctx_lock(void)
 {
-	dbglog("CRASH: exception=0x%lX addr=%p in_decode=%ld in_plugin=%ld",
-		ep->ExceptionRecord->ExceptionCode,
-		(void*)ep->ExceptionRecord->ExceptionInformation[1],
-		g_in_decode, g_in_plugin);
-
-	// Try to flush the log file
-	dbglog("CRASH: terminating process gracefully");
-	dbglog_close();
-
-	// Terminate gracefully instead of showing crash dialog
-	ExitProcess(1);
+	EnterCriticalSection(&g_ctxcs);
 }
 
-static void InstallCrashHandler(void)
+static void ctx_unlock(void)
 {
-	SetUnhandledExceptionFilter(TopLevelExceptionFilter);
+	LeaveCriticalSection(&g_ctxcs);
 }
 
 static DWORD DecodeFrame(FFContext *ctx)
@@ -382,13 +372,15 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 	InterlockedIncrement(&g_in_plugin);
 	DWORD result = 0;
 	dbglog("FF_Open: ENTER filename=%s file=%p cur=%p", filename ? filename : "(null)", file, cur);
-	FFContext *old = cur;
-	if (old) {
-		dbglog("FF_Open: WARNING cur=%p not NULL!", old);
+	FFContext *newctx = OpenFile(file);
+	if (!newctx) goto done;
+
+	ctx_lock();
+	if (cur) {
+		FreeCtx(cur);
+		cur = NULL;
 	}
-	cur = OpenFile(file);
-	dbglog("FF_Open: OpenFile returned cur=%p", cur);
-	if (!cur) goto done;
+	cur = newctx;
 	if (cur->totalsamples) {
 		float length = (float)((double)cur->totalsamples / cur->samplerate);
 		dbglog("FF_Open: calling SetLength, xmpfin=%p", xmpfin);
@@ -404,8 +396,9 @@ static DWORD WINAPI FF_Open(const char *filename, XMPFILE file)
 		xmpffile->NetSetRate(file, br);
 	}
 	result = 1;
-done:
+	ctx_unlock();
 	dbglog("FF_Open: LEAVE cur=%p result=%lu", cur, result);
+done:
 	InterlockedDecrement(&g_in_plugin);
 	return result;
 }
@@ -414,42 +407,68 @@ static void WINAPI FF_Close()
 {
 	InterlockedIncrement(&g_in_plugin);
 	dbglog("FF_Close: ENTER cur=%p", cur);
-	if (cur) {
-		dbglog("FF_Close: freeing ctx=%p fmtctx=%p", cur, cur->fmtctx);
-	}
-	FreeCtx(cur);
+	ctx_lock();
+	FFContext *old = cur;
 	cur = NULL;
+	ctx_unlock();
+	if (old) {
+		dbglog("FF_Close: freeing ctx=%p fmtctx=%p", old, old->fmtctx);
+		FreeCtx(old);
+	}
 	dbglog("FF_Close: LEAVE cur=NULL");
 	InterlockedDecrement(&g_in_plugin);
 }
 
-static char *WINAPI FF_GetTags() { return (cur && cur->fmtctx) ? BuildTags(cur->fmtctx) : NULL; }
+static char *WINAPI FF_GetTags()
+{
+	char *result = NULL;
+	ctx_lock();
+	if (cur && cur->fmtctx) result = BuildTags(cur->fmtctx);
+	ctx_unlock();
+	return result;
+}
 
 static void WINAPI FF_SetFormat(XMPFORMAT *form)
 {
 	InterlockedIncrement(&g_in_plugin);
 	dbglog("FF_SetFormat: cur=%p", cur);
-	if (!cur) { InterlockedDecrement(&g_in_plugin); return; }
+	ctx_lock();
+	if (!cur) {
+		ctx_unlock();
+		InterlockedDecrement(&g_in_plugin);
+		return;
+	}
 	form->res  = 4;
 	form->chan = (WORD)cur->channels;
 	form->rate = cur->samplerate;
+	ctx_unlock();
 	InterlockedDecrement(&g_in_plugin);
 }
 
 static void WINAPI FF_GetInfoText(char *format, char *length)
 {
-	if (!cur) return;
+	ctx_lock();
+	if (!cur) {
+		ctx_unlock();
+		return;
+	}
+	const char *name = GetCodecName(cur);
+	int off = 0;
 	if (format) {
-		const char *name = GetCodecName(cur);
-		int off = sprintf(format, "%s", name);
+		off = sprintf(format, "%s", name);
 		if (cur->bitrate > 0) off += sprintf(format + off, " - %.0fkbps", cur->bitrate);
 		sprintf(format + off, " - %dhz", cur->samplerate);
 	}
+	ctx_unlock();
 }
 
 static void WINAPI FF_GetGeneralInfo(char *buf)
 {
-	if (!cur) return;
+	ctx_lock();
+	if (!cur) {
+		ctx_unlock();
+		return;
+	}
 	int off = sprintf(buf, "Codec\t%s", GetCodecName(cur));
 	if (cur->decctx->codec->long_name) off += sprintf(buf + off, " (%s)", cur->decctx->codec->long_name);
 	buf[off++] = '\r';
@@ -462,24 +481,39 @@ static void WINAPI FF_GetGeneralInfo(char *buf)
 		DWORD secs = (DWORD)((double)cur->totalsamples / cur->samplerate);
 		sprintf(buf + off, "Length\t%u:%02u:%02u\r", secs/3600, (secs/60)%60, secs%60);
 	}
+	ctx_unlock();
 }
 
 static void WINAPI FF_GetMessage(char *buf)
 {
-	if (!cur || !cur->fmtctx) return;
+	ctx_lock();
+	if (!cur || !cur->fmtctx) {
+		ctx_unlock();
+		return;
+	}
 	AVDictionary *meta = cur->fmtctx->metadata;
-	if (!meta) return;
+	if (!meta) {
+		ctx_unlock();
+		return;
+	}
 	AVDictionaryEntry *entry = NULL;
 	while ((entry = av_dict_get(meta, "", entry, AV_DICT_IGNORE_SUFFIX))) {
 		if (entry->key && entry->value) buf = xmpfmisc->FormatInfoText(buf, entry->key, entry->value);
 	}
+	ctx_unlock();
 }
 
 static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 {
 	InterlockedIncrement(&g_in_plugin);
 	LONG callid = InterlockedIncrement(&g_callcount);
-	if (!cur) { dbglog("FF_Process#%ld: cur=NULL RETURN", callid); InterlockedDecrement(&g_in_plugin); return 0; }
+	ctx_lock();
+	if (!cur) {
+		dbglog("FF_Process#%ld: cur=NULL RETURN", callid);
+		ctx_unlock();
+		InterlockedDecrement(&g_in_plugin);
+		return 0;
+	}
 	dbglog("FF_Process#%ld: ENTER cur=%p count=%lu", callid, cur, count);
 	DWORD done = 0;
 	while (done < count) {
@@ -494,6 +528,7 @@ static DWORD WINAPI FF_Process(float *buffer, DWORD count)
 		DecodeFrame(cur);
 	}
 	dbglog("FF_Process#%ld: LEAVE done=%lu", callid, done);
+	ctx_unlock();
 	InterlockedDecrement(&g_in_plugin);
 	return done;
 }
@@ -503,14 +538,20 @@ static double WINAPI FF_GetGranularity() { return 0.001; }
 static double WINAPI FF_SetPosition(DWORD pos)
 {
 	InterlockedIncrement(&g_in_plugin);
+	ctx_lock();
 	dbglog("FF_SetPosition: cur=%p pos=%lu", cur, pos);
-	if (!cur) { InterlockedDecrement(&g_in_plugin); return 0; }
+	if (!cur) {
+		ctx_unlock();
+		InterlockedDecrement(&g_in_plugin);
+		return 0;
+	}
 	double time = pos * FF_GetGranularity();
 	int64_t ts = (int64_t)(time * AV_TIME_BASE);
 	if (avformat_seek_file(cur->fmtctx, cur->audiostream, INT64_MIN, ts, INT64_MAX, 0) < 0)
 		av_seek_frame(cur->fmtctx, cur->audiostream, ts, AVSEEK_FLAG_BACKWARD);
 	avcodec_flush_buffers(cur->decctx);
 	cur->outlen = 0; cur->outpos = 0; cur->eof = FALSE;
+	ctx_unlock();
 	InterlockedDecrement(&g_in_plugin);
 	return time;
 }
@@ -560,13 +601,14 @@ BOOL WINAPI DllMain(HINSTANCE hDLL, DWORD reason, LPVOID reserved)
 {
 	if (reason == DLL_PROCESS_ATTACH) {
 		DisableThreadLibraryCalls(hDLL);
+		InitializeCriticalSection(&g_ctxcs);
 		dbglog_init();
 		dbglog("DllMain: DLL_PROCESS_ATTACH hDLL=%p", hDLL);
-		InstallCrashHandler();
 	}
 	if (reason == DLL_PROCESS_DETACH) {
 		dbglog("DllMain: DLL_PROCESS_DETACH");
 		dbglog_close();
+		DeleteCriticalSection(&g_ctxcs);
 	}
 	return TRUE;
 }
