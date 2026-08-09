@@ -2,6 +2,10 @@ name: Build xmp-ffmpeg
 
 on:
   workflow_dispatch:
+    inputs:
+      ffmpeg_url:
+        description: 'URL to a prebuilt MSVC FFmpeg dev zip (must contain include/ and lib/)'
+        required: false
 
 permissions:
   contents: write
@@ -113,7 +117,7 @@ jobs:
           draft: false
 
   msvc-build:
-    name: Build (MSVC, /MT, v141_xp)
+    name: Build (MSVC, /MT, using prebuilt FFmpeg)
     runs-on: windows-2022
     needs: build
     timeout-minutes: 180
@@ -122,24 +126,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install vcpkg
+      - name: Download prebuilt MSVC FFmpeg dev package
+        if: ${{ inputs.ffmpeg_url != '' }}
         run: |
-          git clone https://github.com/microsoft/vcpkg.git vcpkg
-          .\vcpkg\bootstrap-vcpkg.bat
+          echo Downloading FFmpeg from ${{ inputs.ffmpeg_url }}
+          powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '${{ inputs.ffmpeg_url }}' -OutFile ffmpeg_dev.zip"
+          powershell -Command "Expand-Archive -Path ffmpeg_dev.zip -DestinationPath third_party\\ffmpeg -Force"
+        shell: pwsh
 
-      - name: Install FFmpeg via vcpkg (x86 static)
+      - name: Fail if no prebuilt FFmpeg provided
+        if: ${{ inputs.ffmpeg_url == '' }}
         run: |
-          .\vcpkg\vcpkg.exe install ffmpeg[core]:x86-windows-static
+          echo 'No ffmpeg_url input provided to workflow. Provide a URL to a prebuilt MSVC FFmpeg dev zip (must contain include/ and lib/ directories).'
+          exit 1
         shell: cmd
 
       - name: Build with MSBuild (targeting XP runtime)
         env:
           CL: /MT
-          FFmpegDir: ${{ github.workspace }}\\vcpkg\\installed\\x86-windows-static
+          FFmpegDir: ${{ github.workspace }}\\third_party\\ffmpeg
         run: |
           setlocal enabledelayedexpansion
-          call "%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" -version 15.0 -products * -requires Microsoft.Component.MSBuild -latest -property installationPath || true
-          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /p:FFmpegDir="%FFmpegDir%" /m
+          echo Looking for vswhere...
+          if not exist "%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" (
+            echo vswhere not found; exit /b 1
+          )
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set "VSROOT=%%i"
+          if not defined VSROOT (
+            echo Visual Studio installation not found; exiting
+            exit /b 1
+          )
+          set "MSBUILD=%VSROOT%\\MSBuild\\Current\\Bin\\MSBuild.exe"
+          if not exist "%MSBUILD%" (
+            rem try older path
+            set "MSBUILD=%VSROOT%\\MSBuild\\15.0\\Bin\\MSBuild.exe"
+          )
+          if not exist "%MSBUILD%" (
+            echo MSBuild executable not found under %VSROOT%; exiting
+            exit /b 1
+          )
+          echo Using MSBuild at %MSBUILD%
+          "%MSBUILD%" xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /p:FFmpegDir="%FFmpegDir%" /m
         shell: cmd
 
       - name: Upload MSVC artifacts
