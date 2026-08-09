@@ -111,3 +111,42 @@ jobs:
             xmp-ffmpeg.dll
             xmp-ffmpeg-debug.dll
           draft: false
+
+  msvc-build:
+    name: Build (MSVC, /MT, v141_xp)
+    runs-on: windows-2019
+    needs: build
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+
+      - name: Install FFmpeg via vcpkg (x86 static)
+        run: |
+          .\vcpkg\vcpkg.exe install ffmpeg[core]:x86-windows-static
+        shell: cmd
+
+      - name: Build with MSBuild (targeting XP runtime)
+        env:
+          CL: /MT
+          FFmpegDir: ${{ github.workspace }}\\vcpkg\\installed\\x86-windows-static
+        run: |
+          setlocal enabledelayedexpansion
+          call "%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe" -version 15.0 -products * -requires Microsoft.Component.MSBuild -latest -property installationPath || true
+          msbuild xmp-ffmpeg.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v141_xp /p:FFmpegDir="%FFmpegDir%" /m
+        shell: cmd
+
+      - name: Upload MSVC artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: xmp-ffmpeg-msvc-builds
+          path: |
+            xmp-ffmpeg.dll
+            xmp-ffmpeg.lib
+          retention-days: 30
