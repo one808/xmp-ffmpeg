@@ -114,7 +114,7 @@ jobs:
 
   msvc-build:
     name: Build (MSVC, /MT, v141_xp)
-    runs-on: windows-2019
+    runs-on: windows-2022
     needs: build
     timeout-minutes: 180
 
