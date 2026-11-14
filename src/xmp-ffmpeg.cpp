@@ -229,11 +229,7 @@ static char *BuildTags(FFMPEG *f)
 		while (len + n + 1 > cap) { cap *= 2; buf = (char*)xmpfmisc->ReAlloc(buf, cap); if (!buf) return 0; } \
 		memcpy(buf + len, s, n); len += n; } while (0)
 
-	{ // filetype first
-		const AVInputFormat *iformat = f->fmt->iformat;
-		TAGAPPEND("filetype");
-		TAGAPPEND(iformat && iformat->long_name ? iformat->long_name : "FFmpeg");
-	}
+	// "filetype" intentionally NOT set (Ian: misleading raw/Ogg naming)
 	for (int i = 0; i < (int)(sizeof(tag_keys) / sizeof(tag_keys[0])); i++) {
 		AVDictionaryEntry *e = av_dict_get(f->fmt->streams[f->stream]->metadata, tag_keys[i], NULL, 0);
 		if (!e) e = av_dict_get(f->fmt->metadata, tag_keys[i], NULL, 0);
@@ -261,8 +257,8 @@ static BOOL ensure_outbuf(FFMPEG *f, DWORD floats)
 
 static void WINAPI FF_About(HWND win)
 {
-	char msg[256];
-	sprintf(msg, "%s %s\n\nPlays any audio format FFmpeg can decode,\n"
+	char msg[512];
+	snprintf(msg, sizeof(msg), "%s %s\n\nPlays any audio format FFmpeg can decode,\n"
 		"including the audio stream of video files.\n\nFFmpeg: %s\nXMPlay plugin interface %u",
 		PLUGIN_NAME, PLUGIN_VER, av_version_info(), (unsigned)XMPIN_FACE);
 	MessageBox(win, msg, "About " PLUGIN_NAME, MB_ICONINFORMATION);
@@ -446,7 +442,7 @@ static double WINAPI FF_SetPosition(DWORD pos)
 extern "C" __declspec(dllexport) XMPIN *WINAPI XMPIN_GetInterface(DWORD face, InterfaceProc faceproc)
 {
 	static XMPIN xmpin = {
-		XMPIN_FLAG_CANSTREAM | XMPIN_FLAG_NOCHECK | XMPIN_FLAG_MULTIEXT,
+		XMPIN_FLAG_CANSTREAM | XMPIN_FLAG_NOCHECK | XMPIN_FLAG_MULTIEXT | XMPIN_FLAG_NETSEEK,
 		"FFmpeg (audio)",
 		"FFmpeg audio\0"
 			"mp3/mp2/mp1/mpa/m4a/m4b/m4r/aac/ac3/eac3/dts/dtshd/hra/mlp/truehd/thd/"
